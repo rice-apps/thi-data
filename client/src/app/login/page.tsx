@@ -1,15 +1,13 @@
 // src/app/login/page.tsx
-
 "use client";
 
 import { useState } from "react";
-import { getSupabase } from "../../utils/supabase/client";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState(""); // Add state for password
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -18,21 +16,29 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
-    const supabase = getSupabase()
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      // Sign in using the API route
+      const response = await fetch('/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
 
-    setLoading(false);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
+      }
 
-    if (error) {
-      setError(error.message);
-    } else {
-      // Login successful, redirect to the instruments page or home
-      router.push("/instruments");
+      // Force a full page reload to ensure all session data is properly loaded
+      window.location.href = '/instruments';
+    } catch (error: any) {
+      setError(error.message || 'An error occurred during login');
+      setLoading(false);
     }
-  };
+  }
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
