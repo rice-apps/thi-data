@@ -1,12 +1,13 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
-import database
-from database import User
-from schema import Item, UpdateItem
+from sqlalchemy.orm import Session
+from sqlalchemy import select, inspect
+import crud
+
+from typing import Any, List
+from database import SessionLocal, Base, reflect_db
 
 app = FastAPI()
-session = database.get_session()
 
 origins = [
     "http://localhost:3000",
@@ -20,56 +21,141 @@ app.add_middleware(
     allow_headers=["*"], # Allows all headers
 )
 
+@app.on_event("startup")
+def on_startup():
+    reflect_db()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def get_model_class(table_name: str):
+    """
+    FastAPI dependency to get the SQLAlchemy model class from a table name.
+    """
+    model_class = Base.classes.get(table_name)
+    if not model_class:
+        raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found.")
+    return model_class
+
+
+# --- API Endpoints ---
+
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
 
-@app.get("/api/users")
-def get_all_users():
-    statement = select(User)
-    users = session.scalars(statement).all()
-    return users
+@app.get("/api/tables")
+def get_all_tables():
+    """
+    Get a list of all table names reflected from the database.
+    """
+    return {"tables": list(Base.classes.keys())}
 
-@app.post("/api/user/create")
-def create_data(items: Item):
-    new_user = User(first_name=items.first_name, last_name=items.last_name, age=items.age)
-    session.add(new_user)
-    session.commit()
-    return {"message": "User created successfully!"}
+@app.get("/api/{table_name}")
+def get_all_items(
+    model_class: Any = Depends(get_model_class), 
+    db: Session = Depends(get_db)
+) -> List[dict]:
+    """
+    Get all items from a specified table.
+    """
+    items = crud.get_all_items(db, model_class)
+    return [crud.model_to_dict(item) for item in items]
 
-
-@app.get("/api/user/{user_id}")
-def get_user(user_id: int):
-    user = session.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
-
-@app.put("/api/user/{user_id}")
-def update_user(user_id: int, item: UpdateItem):
-    user = session.get(User, user_id)
+@app.post("/api/{table_name}")
+def create_item(
+    item_data: dict, 
+    model_class: Any = Depends(get_model_class), 
+    db: Session = Depends(get_db)
+) -> dict:
+    """
+    Create a new item in a specified table.
+    Validation is based on the table's columns, not a Pydantic schema.
+    """
+    mapper = inspect(model_class)
+    valid_keys = {c.key for c in mapper.column_attrs}
     
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    # --- Dynamic Validation ---
+    for key in item_data:
+        if key not in valid_keys:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid field: '{key}'. Valid fields are: {list(valid_keys)}"
+            )
+            
+    try:
+        new_item = crud.create_item(db, model_class, item_data)
+        return crud.model_to_dict(new_item)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error creating item: {e}")
 
-    user.first_name = item.first_name if item.first_name else user.first_name
-    user.last_name = item.last_name if item.last_name else user.last_name
-    user.age = item.age if item.age else user.age
 
-    session.add(user)
-    session.commit()
-    session.refresh(user)
+@app.get("/api/{table_name}/{item_id}")
+def get_one_item(
+    item_id: int, 
+    model_class: Any = Depends(get_model_class), 
+    db: Session = Depends(get_db)
+) -> dict:
+    """
+    Get a single item by its ID from a specified table.
+    (Note: Assumes an integer primary key)
+    """
+    item = crud.get_one_item(db, model_class, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return crud.model_to_dict(item)
 
-    return user
+@app.put("/api/{table_name}/{item_id}")
+def update_item(
+    item_id: int,
+    item_data: dict, 
+    model_class: Any = Depends(get_model_class), 
+    db: Session = Depends(get_db)
+) -> dict:
+    """
+    Update an item in a specified table.
+    Validation is based on the table's columns.
+    """
+    item = crud.get_one_item(db, model_class, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
 
-@app.delete("/api/user/{user_id}")
-def delete_user(user_id: int):
-    user = session.get(User, user_id)
+    mapper = inspect(model_class)
+    valid_keys = {c.key for c in mapper.column_attrs}
+    pk_keys = {c.key for c in mapper.primary_key}
+
+    for key, value in item_data.items():
+        if key not in valid_keys:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid field: '{key}'. Valid fields are: {list(valid_keys)}"
+            )
+        if key in pk_keys:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cannot update primary key field: '{key}'"
+            )
+        setattr(item, key, value)
     
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    session.delete(user)
-    session.commit()
+    try:
+        new_item = crud.update_item(db, model_class, item_id, item)
+        return crud.model_to_dict(new_item)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error updating item: {e}")
 
-    return {"message": "User deleted successfully"}
+
+@app.delete("/api/{table_name}/{item_id}")
+def delete_item(
+    item_id: int, 
+    model_class: Any = Depends(get_model_class), 
+    db: Session = Depends(get_db)
+):
+    """
+    Delete an item by its ID from a specified table.
+    """
+    crud.delete_item(db, model_class, item_id)
+    return {"message": "Item deleted successfully"}
