@@ -16,13 +16,20 @@ async function getData() {
 }
 
 export default async function Home() {
-    const data = await getData();
-
+    // const data = await getData();
+    //
+    // return (
+    //     <main className="flex min-h-screen flex-col items-center justify-center p-24">
+    //         <h1 className="mt-4 text-2xl bg-black-100 p-4 rounded-lg">
+    //             {data.message}
+    //         </h1>
+    //     </main>
+    // );
     return (
         <main className="flex min-h-screen flex-col items-center justify-center p-24">
             <h1 className="mt-4 text-2xl bg-black-100 p-4 rounded-lg">
-                {data.message}
+                Home page
             </h1>
         </main>
-    );
+    )
 }
