@@ -10,6 +10,7 @@ h11==0.16.0
 httptools==0.7.1
 idna==3.11
 marshmallow==4.0.1
+psycopg2-binary==2.9.11
 pydantic==2.12.3
 pydantic_core==2.41.4
 python-dotenv==1.1.1
