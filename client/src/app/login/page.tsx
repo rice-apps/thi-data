@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { getSupabase } from "@/utils/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,27 +17,22 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
-    try {
-      // Sign in using the API route
-      const response = await fetch('/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
+    const supabase = getSupabase()
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Login failed');
-      }
+    setLoading(false);
 
-      // Force a full page reload to ensure all session data is properly loaded
-      window.location.href = '/instruments';
-    } catch (error: any) {
-      setError(error.message || 'An error occurred during login');
-      setLoading(false);
+    if (error) {
+      console.log(`An error occurred: ${error.message}`);
+      setError(error.message);
+    } else {
+      console.log("Login info correct");
+      // Login successful, redirect to home page
+      router.push("/");
+      router.refresh(); // Refresh to update server-side session
     }
   }
 

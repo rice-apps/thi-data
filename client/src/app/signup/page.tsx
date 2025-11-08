@@ -23,10 +23,11 @@ export default function SignupPage() {
     e.preventDefault();
     setError(null);
 
-    if (!form.email.endsWith("@texashearing.org")) {
-      setError("Please use your @texashearing.org email address.");
-      return;
-    }
+    // Commented out email ending verification for testing purposes
+    // if (!form.email.endsWith("@texashearing.org")) {
+    //   setError("Please use your @texashearing.org email address.");
+    //   return;
+    // }
 
     setLoading(true);
     const supabase = getSupabase()
