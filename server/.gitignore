@@ -1,2 +1,5 @@
 venv
 .idea
+thi/
+__pycache__/
+*.pyc

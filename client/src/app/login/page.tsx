@@ -27,10 +27,13 @@ export default function LoginPage() {
     setLoading(false);
 
     if (error) {
+      console.log(`An error occurred: ${error.message}`);
       setError(error.message);
     } else {
-      // Login successful, redirect to the instruments page or home
-      router.push("/instruments");
+      console.log("Login info correct");
+      // Login successful, redirect to home page
+      router.push("/");
+      router.refresh(); // Refresh to update server-side session
     }
   };
 
