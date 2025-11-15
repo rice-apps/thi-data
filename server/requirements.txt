@@ -13,6 +13,10 @@ httptools==0.7.1
 idna==3.11
 iniconfig==2.3.0
 marshmallow==4.0.1
+packaging==25.0
+pluggy==1.6.0
+psycopg==3.2.12
+psycopg-binary==3.2.12
 pydantic==2.12.3
 pydantic_core==2.41.4
 Pygments==2.19.2
