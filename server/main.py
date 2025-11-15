@@ -2,16 +2,32 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import select, inspect
+from pydantic import BaseModel
+import uuid
 import crud
+from contextlib import asynccontextmanager
 
 from typing import Any, List
 from database import SessionLocal, Base, reflect_db
 
-app = FastAPI()
+class MetadataCreationRequest(BaseModel):
+    created_by: str
+    table_name: str
+
+class MetadataUpdateRequest(BaseModel):
+    foreign_key: uuid.UUID
+    updated_by: str
 
 origins = [
     "http://localhost:3000",
 ]
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    reflect_db()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,11 +36,6 @@ app.add_middleware(
     allow_methods=["*"], # Allows all methods
     allow_headers=["*"], # Allows all headers
 )
-
-@app.on_event("startup")
-def on_startup():
-    reflect_db()
-
 def get_db():
     db = SessionLocal()
     try:
@@ -54,6 +65,37 @@ def get_all_tables():
     Get a list of all table names reflected from the database.
     """
     return {"tables": list(Base.classes.keys())}
+
+@app.post("/api/metadata_creation")
+def metadata_creation(request_data: MetadataCreationRequest, db: Session = Depends(get_db)):
+    model_class = Base.classes.get("metadata_creation")
+    if not model_class:
+        raise HTTPException(
+            status_code=500, 
+            detail="Configuration error: 'metadata_creation' table not found."
+        )
+    item_data = request_data.dict()
+    try:
+        new_item = crud.create_item(db, model_class, item_data)
+        return crud.model_to_dict(new_item)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error creating item: {e}")
+
+@app.post("/api/metadata_update")
+def metadata_update(request_data: MetadataUpdateRequest, db: Session = Depends(get_db)):
+    model_class = Base.classes.get("metadata_updates")
+    if not model_class:
+        raise HTTPException(
+            status_code=500, 
+            detail="Configuration error: 'metadata_updates' table not found."
+        )
+    item_data = request_data.dict()
+    try:
+        new_item = crud.create_item(db, model_class, item_data)
+        return crud.model_to_dict(new_item)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error creating item: {e}")
+    
 
 @app.get("/api/{table_name}")
 def get_all_items(
