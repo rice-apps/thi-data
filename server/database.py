@@ -12,7 +12,7 @@ HOST = "aws-1-us-east-1.pooler.supabase.com"
 PORT = 6543
 DBNAME = "postgres"
 
-DATABASE_URL = f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
+DATABASE_URL = f"postgresql+psycopg://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
 engine = create_engine(DATABASE_URL, poolclass=NullPool)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
