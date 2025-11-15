@@ -5,11 +5,10 @@ from sqlalchemy import select, inspect
 from pydantic import BaseModel
 import uuid
 import crud
+from contextlib import asynccontextmanager
 
 from typing import Any, List
 from database import SessionLocal, Base, reflect_db
-
-app = FastAPI()
 
 class MetadataCreationRequest(BaseModel):
     created_by: str
@@ -23,6 +22,13 @@ origins = [
     "http://localhost:3000",
 ]
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    reflect_db()
+    yield
+
+app = FastAPI(lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -30,11 +36,6 @@ app.add_middleware(
     allow_methods=["*"], # Allows all methods
     allow_headers=["*"], # Allows all headers
 )
-
-@app.on_event("startup")
-def on_startup():
-    reflect_db()
-
 def get_db():
     db = SessionLocal()
     try:
