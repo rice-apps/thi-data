@@ -6,11 +6,11 @@ from sqlalchemy.ext.automap import automap_base
 
 load_dotenv()
 
-USER = "postgres.sbulhiltlnhriclwrrdh"
-PASSWORD = "C4QemTMeEDwtQUbx"
-HOST = "aws-1-us-east-1.pooler.supabase.com"
-PORT = 6543
-DBNAME = "postgres"
+USER = os.getenv("user")
+PASSWORD = os.getenv("password")
+HOST = os.getenv("host")
+PORT = os.getenv("port")
+DBNAME = os.getenv("dbname")
 
 DATABASE_URL = f"postgresql+psycopg://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
 engine = create_engine(DATABASE_URL, poolclass=NullPool)
