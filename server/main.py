@@ -3,20 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import select, inspect
 from pydantic import BaseModel
-import uuid
 import crud
 from contextlib import asynccontextmanager
-
 from typing import Any, List
 from database import SessionLocal, Base, reflect_db
+from schema import MetadataCreationRequest, MetadataUpdateRequest, SearchCreatedByResponse, FilterCreatedAtRequest
+from datetime import datetime, time
 
-class MetadataCreationRequest(BaseModel):
-    created_by: str
-    table_name: str
-
-class MetadataUpdateRequest(BaseModel):
-    foreign_key: uuid.UUID
-    updated_by: str
 
 origins = [
     "http://localhost:3000",
@@ -52,6 +45,66 @@ def get_model_class(table_name: str):
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found.")
     return model_class
 
+ #--- Filter Database Metadata ---
+
+@app.get("/api/search_created_by")
+def search_created_by(request: SearchCreatedByResponse, db: Session = Depends(get_db)):
+    model_class = Base.classes.get("metadata_creation")
+    if not model_class:
+        raise HTTPException(
+            status_code=500, 
+            detail="Configuration error: 'metadata_creation' table not found."
+        )
+    stmt = select(model_class).where(model_class.created_by == request.name)
+    results = db.execute(stmt).scalars().all()
+    return [crud.model_to_dict(item) for item in results]
+
+@app.get("/api/search_updated_by")
+def search_updated_by(request: SearchCreatedByResponse, db: Session = Depends(get_db)):
+    model_class = Base.classes.get("metadata_updates")
+    if not model_class:
+        raise HTTPException(
+            status_code=500, 
+            detail="Configuration error: 'metadata_updates' table not found."
+        )
+    stmt = select(model_class).where(model_class.updated_by == request.name)
+    results = db.execute(stmt).scalars().all()
+    return [crud.model_to_dict(item) for item in results]
+
+
+@app.get("/api/filter_created_at")
+def filter_created_at(request: FilterCreatedAtRequest, db: Session = Depends(get_db)):
+    model_class = Base.classes.get("metadata_creation")
+    if not model_class:
+        raise HTTPException(
+            status_code=500, 
+            detail="Configuration error: 'metadata_creation' table not found."
+        )
+    
+    start_datetime = datetime.combine(request.start_date, time.min)
+    end_datetime = datetime.combine(request.end_date, time.max)
+    stmt = select(model_class).where(
+        model_class.created_at.between(start_datetime, end_datetime)
+    )
+    results = db.execute(stmt).scalars().all()
+    return [crud.model_to_dict(item) for item in results]
+
+@app.get("/api/filter_updated_at")
+def filter_updated_at(request: FilterCreatedAtRequest, db: Session = Depends(get_db)):
+    model_class = Base.classes.get("metadata_updates")
+    if not model_class:
+        raise HTTPException(
+            status_code=500, 
+            detail="Configuration error: 'metadata_updates' table not found."
+        )
+    
+    start_datetime = datetime.combine(request.start_date, time.min)
+    end_datetime = datetime.combine(request.end_date, time.max)
+    stmt = select(model_class).where(
+        model_class.updated_at.between(start_datetime, end_datetime)
+    )
+    results = db.execute(stmt).scalars().all()
+    return [crud.model_to_dict(item) for item in results]
 
 # --- API Endpoints ---
 
@@ -108,7 +161,7 @@ def get_all_items(
     items = crud.get_all_items(db, model_class)
     return [crud.model_to_dict(item) for item in items]
 
-@app.post("/api/{table_name}")
+@app.post("/api/table/{table_name}")
 def create_item(
     item_data: dict, 
     model_class: Any = Depends(get_model_class), 
