@@ -1,4 +1,4 @@
-import { loginResult } from '@/utils/supabase/isloggedin';
+import { loginResult } from '@/utils/checklogin';
 import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
 

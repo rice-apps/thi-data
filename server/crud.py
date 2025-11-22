@@ -1,21 +1,49 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import select, inspect
+from sqlalchemy import select, inspect, cast, String
 from typing import Any, List, Dict
 from fastapi import HTTPException
 
+def model_to_dict(model_instance):
+    """Helper to convert SQLAlchemy model to dict"""
+    return {c.key: getattr(model_instance, c.key) for c in inspect(model_instance).mapper.column_attrs}
 
-def model_to_dict(model_instance: Any) -> dict:
+# def get_all_items(db: Session, model_class: Any):
+#     """
+#     Returns a tuple: (list_of_items, total_count)
+#     """
+#     query = db.query(model_class)
+#     total = query.count() # Get total before slicing
+#     items = query.all()
+#     return items, total
+
+def get_all_items(db: Session, model_class: Any, skip: int = 0, limit: int = 100):
     """
-    Helper function to convert a SQLAlchemy model instance to a dictionary.
+    Returns a tuple: (list_of_items, total_count)
     """
-    mapper = inspect(model_instance.__class__)
-    return {c.key: getattr(model_instance, c.key) for c in mapper.column_attrs}
+    query = db.query(model_class)
+    total = query.count() # Get total before slicing
+    items = query.offset(skip).limit(limit).all()
+    return items, total
+
+def filter_text(db: Session, model_class: Any, column: str, text: str, skip: int = 0, limit: int = 100):
+    """
+    Searches column for text, handling numeric columns via CAST.
+    Returns a tuple: (list_of_items, total_count)
+    """
+    col = getattr(model_class, column)
+    
+    # FIX: Cast column to String so ILIKE works on Integers (Age, ID, etc.)
+    search_filter = cast(col, String).ilike(f"%{text}%")
+    
+    query = db.query(model_class).filter(search_filter)
+    
+    total = query.count() # Get total matches before slicing
+    items = query.offset(skip).limit(limit).all()
+    
+    return items, total
 
 def get_one_item(db: Session, model_class: Any, item_id: int):
     return db.get(model_class, item_id)
-
-def get_all_items(db: Session, model_class: Any):
-    return db.scalars(select(model_class)).all()
 
 def create_item(db: Session, model_class: Any, item_data: Dict[str, Any]):
     try:

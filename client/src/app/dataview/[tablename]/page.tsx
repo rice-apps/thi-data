@@ -1,87 +1,139 @@
 import React from "react";
-import { loginResult } from "@/utils/supabase/isloggedin";
-import { redirect } from 'next/navigation';
+import { loginResult } from "@/utils/checklogin";
+import { redirect } from "next/navigation";
+import { getAPI } from "@/utils/adapter";
+import SearchForm from "./SearchForm"; 
+import Pagination from "./pagination";
+import type { ReactNode } from "react";
 
-type Props = {
-  params: { tablename: string };
+type PageProps = {
+  params: Promise<{ tablename: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined, page?: string, limit?: string}>;
 };
 
-export default async function DataViewPage({ params }: Props) {
-  const { tablename } = await params;
+type TableRow = { id: string | number } & Record<string, unknown>;
 
-  // check if logged in
-  const user = await loginResult(); 
-  if (!user){
-    redirect('/login'); 
-  }
+export default async function DataViewPage(props: PageProps) {
+  const params = await props.params;
+  const searchParams = await props.searchParams;
 
-  let data: any;
-  let error: string | null = null;
+  const { tablename } = params;
+  const column = typeof searchParams.column === 'string' ? searchParams.column : undefined;
+  const search = typeof searchParams.search === 'string' ? searchParams.search : undefined;
+
+  const user = await loginResult();
+  if (!user) redirect("/login");
+
+  const page = Number(searchParams.page) || 1;
+  const limit = Number(searchParams.limit) || 10;
+  
+  const skip = (page - 1) * limit;
+
+  // Prepare the query object
+  const paginationParams = { skip, limit };
+
+  let response;
 
   try {
-    data = await getTableData(tablename);
+    if (column && search) {
+      // Pass path as arg 1, pagination as arg 2
+      response = await getAPI(
+        `${tablename}/search/${column}/${encodeURIComponent(search)}`, 
+        paginationParams
+      );
+    } else {
+      // Pass path as arg 1, pagination as arg 2
+      response = await getAPI(tablename, paginationParams);
+    }
   } catch (err: any) {
-    error = err?.message ?? String(err);
+    // error = err?.message ?? String(err);
   }
+
+  // Handle the new response shape { data: [...], total: 123 }
+  // We use optional chaining in case error happened and response is undefined
+  const data = response?.data || []; 
+  const totalItems = response?.total || 0;
+  let error: string | null = null;
+
 
   if (error) {
     return (
-      <main style={{ padding: 24 }}>
-        <h1>Error loading table <code>{tablename}</code></h1>
-        <pre>{error}</pre>
+      <main className="p-4 text-red-600">
+        <strong>Error:</strong> {error}
       </main>
     );
   }
+  const hasData = Array.isArray(data) && data.length > 0;
+  let headers: string[] = [];
 
-  // Avoid displaying or indexing into empty table
-  if (data.length == 0) {
-    return (
-      <h2> <b>No content!!!!!!!! </b></h2>
-    )
+  if (Array.isArray(data) && data.length > 0) {
+     headers = Object.keys(data[0]).filter((key) => key !== "id");
+  } else {
+    try {
+      // We fetch with limit=1 for speed
+      const sampleResponse = await getAPI(tablename, { limit: 1 });
+      
+      const sampleRows = sampleResponse?.data || [];
+      
+      if (Array.isArray(sampleRows) && sampleRows.length > 0) {
+          headers = Object.keys(sampleRows[0]).filter((key) => key !== "id");
+      }
+     } catch (e) {
+       console.warn("Could not fetch sample data for headers");
+     }
   }
 
-  // remove the id field, avoid showing it in dataview.
-  const content = data.map(({ id, ...rest }) => rest);
+  const totalPages = Math.ceil(totalItems / limit);
 
-  const headers = Object.keys(content[0]);
-
-  const rows = content.map(key => Object.values(key));
-  console.log(`Rows: ${rows}`);
   return (
-    <div className="flex flex-col items-center min-h-screen bg-gray-50 p-8">
-      <h1 className="text-center text-3xl py-5">{tablename}</h1>
-      <table>
-        <thead>
-          <tr>
-            {headers.map(header => <th key={header} className="text-center px-10">{header}</th>)}
-          </tr>
-        </thead>
-        <tbody className="text-sm">
-          {rows.map((row: any, index: any) => (
-            <tr key={index}>
-              {row.map((cell: any, index: any) => <td key={index} className={`text-center ${cell ? "" : "text-gray-400 italic"}`}>{cell ? cell : "null"}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="flex flex-col h-screen bg-gray-50 p-4 overflow-hidden">
+      
+      <div className="flex justify-between items-center mb-4 bg-white p-3 rounded shadow-sm">
+        <h1 className="text-lg font-bold capitalize text-gray-700">{tablename}</h1>
+
+        <SearchForm 
+          tablename={tablename}
+          headers={headers}
+          initialColumn={column}
+          initialSearch={search}
+        />
+      </div>
+
+      <div className="flex-1 overflow-auto rounded bg-white shadow-sm">
+        {!hasData ? (
+          <div className="p-4 text-sm text-gray-500 italic">No records found.</div>
+        ) : (
+          <table className="w-full text-left">
+            <thead className="bg-gray-100 text-xs uppercase text-gray-600 sticky top-0 z-10 shadow-sm">
+              <tr>
+                {headers.map((header) => (
+                  <th key={header} className="py-2 px-3 font-semibold">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="text-xs text-gray-700 divide-y">
+              {data.map((row) => (
+                <tr key={row.id} className="hover:bg-blue-50 transition-colors">
+                  {headers.map((colName) => {
+                    const cellValue = row[colName];
+                    return (
+                      <td key={`${row.id}-${colName}`} className="py-1 px-3 whitespace-nowrap border-r last:border-r-0 border-gray-100">
+                         {cellValue ? String(cellValue) : <span className="text-gray-300">-</span>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      
+      <div className="mt-5 flex w-full justify-center">
+        <Pagination totalPages={totalPages} />
+      </div>
     </div>
   );
-}
-
-
-// Pull data from the backend by the tableName
-async function getTableData(rawTableName: string): Promise<any> {
-  const backendUrl = process.env.BACKEND_URL ?? "http://localhost:8000";
-  const url = `${backendUrl.replace(/\/$/, "")}/api/${encodeURIComponent(rawTableName)}`;
-
-  const resp = await fetch(url, {
-    cache: "no-store",
-  });
-
-  if (!resp.ok) {
-    const bodyText = await resp.text().catch(() => "");
-    throw new Error(`Fetch failed (${resp.status} ${resp.statusText})${bodyText ? `: ${bodyText}` : ""}`);
-  }
-
-  return resp.json();
 }

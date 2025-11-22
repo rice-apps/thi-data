@@ -55,16 +55,33 @@ def get_all_tables():
     """
     return {"tables": list(Base.classes.keys())}
 
+# @app.get("/api/{table_name}")
+# def get_all_items(
+#     model_class: Any = Depends(get_model_class), 
+#     db: Session = Depends(get_db)
+# ) -> List[dict]:
+#     """
+#     Get all items from a specified table.
+#     """
+#     items = crud.get_all_items(db, model_class)
+#     return [crud.model_to_dict(item) for item in items]
+
 @app.get("/api/{table_name}")
 def get_all_items(
+    skip: int = 0,
+    limit: int = 100,
     model_class: Any = Depends(get_model_class), 
     db: Session = Depends(get_db)
-) -> List[dict]:
-    """
-    Get all items from a specified table.
-    """
-    items = crud.get_all_items(db, model_class)
-    return [crud.model_to_dict(item) for item in items]
+) -> dict[str, Any]:
+    
+    items, total = crud.get_all_items(db, model_class, skip=skip, limit=limit)
+    
+    return {
+        "data": [crud.model_to_dict(item) for item in items],
+        "total": total,
+        "page": (skip // limit) + 1,
+        "limit": limit
+    }
 
 @app.post("/api/{table_name}")
 def create_item(
@@ -93,6 +110,27 @@ def create_item(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error creating item: {e}")
 
+
+@app.get("/api/{table_name}/search/{column}/{match}")
+def match_items(
+    column: str,
+    match: str,
+    skip: int = 0,
+    limit: int = 100,
+    model_class: Any = Depends(get_model_class), 
+    db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    try:
+        results, total = crud.filter_text(db, model_class, column, match, skip=skip, limit=limit)
+        
+        return {
+            "data": [crud.model_to_dict(item) for item in results],
+            "total": total,
+            "page": (skip // limit) + 1,
+            "limit": limit
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error matching items: {e}")    
 
 @app.get("/api/{table_name}/{item_id}")
 def get_one_item(
@@ -159,3 +197,7 @@ def delete_item(
     """
     crud.delete_item(db, model_class, item_id)
     return {"message": "Item deleted successfully"}
+
+
+
+    
