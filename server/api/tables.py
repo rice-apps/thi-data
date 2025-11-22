@@ -1,64 +1,47 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from database import reflect_db
-from api import metadata, tables, metadata_filters
+from fastapi import APIRouter, HTTPException, Depends
+import crud
+from typing import Any, List
+from sqlalchemy.orm import Session
+from database import Base
+from deps import get_db, get_model_class
+from sqlalchemy import select, inspect
 
-origins = [
-    "http://localhost:3000",
-]
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    reflect_db()
-    yield
-
-app = FastAPI(lifespan=lifespan)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"], # Allows all methods
-    allow_headers=["*"], # Allows all headers
-)
-
-
-# --- API Endpoints ---
-
-@app.get("/")
-def read_root():
-    return {"Hello": "World"}
-
-@app.get("/api/tables")
+router = APIRouter()
+@router.get("/api/tables")
 def get_all_tables():
     """
-    Get a list of all table names reflected from the database.
+    Get a list of all table names reflected from
+     the database.
     """
     return {"tables": list(Base.classes.keys())}
 
-app.include_router(metadata_filters.router)
-app.include_router(metadata.router)
-app.include_router(tables.router)
+@router.get("/api/get_size/{table_name}")
+def get_size(
+    table_name: str,
+    db: Session = Depends(get_db)
+) -> dict:
+    """
+    Get the size of a specific table (e.g. KB, MB, GB).
+    """
+    try:
+        size_info = crud.get_database_size(table_name, db)
+        return size_info
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error getting size: {e}")
 
-@app.get("/api/{table_name}")
+
+@router.get("/api/{table_name}")
 def get_all_items(
-    skip: int = 0,
-    limit: int = 100,
     model_class: Any = Depends(get_model_class), 
     db: Session = Depends(get_db)
-) -> dict[str, Any]:
-    
-    items, total = crud.get_all_items(db, model_class, skip=skip, limit=limit)
-    
-    return {
-        "data": [crud.model_to_dict(item) for item in items],
-        "total": total,
-        "page": (skip // limit) + 1,
-        "limit": limit
-    }
+) -> List[dict]:
+    """
+    Get all items from a specified table.
+    """
+    items = crud.get_all_items(db, model_class)
+    return [crud.model_to_dict(item) for item in items]
 
-@app.post("/api/{table_name}")
+@router.post("/api/table/{table_name}")
 def create_item(
     item_data: dict, 
     model_class: Any = Depends(get_model_class), 
@@ -86,28 +69,7 @@ def create_item(
         raise HTTPException(status_code=400, detail=f"Error creating item: {e}")
 
 
-@app.get("/api/{table_name}/search/{column}/{match}")
-def match_items(
-    column: str,
-    match: str,
-    skip: int = 0,
-    limit: int = 100,
-    model_class: Any = Depends(get_model_class), 
-    db: Session = Depends(get_db)
-) -> dict[str, Any]:
-    try:
-        results, total = crud.filter_text(db, model_class, column, match, skip=skip, limit=limit)
-        
-        return {
-            "data": [crud.model_to_dict(item) for item in results],
-            "total": total,
-            "page": (skip // limit) + 1,
-            "limit": limit
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error matching items: {e}")    
-
-@app.get("/api/{table_name}/{item_id}")
+@router.get("/api/{table_name}/{item_id}")
 def get_one_item(
     item_id: int, 
     model_class: Any = Depends(get_model_class), 
@@ -122,7 +84,7 @@ def get_one_item(
         raise HTTPException(status_code=404, detail="Item not found")
     return crud.model_to_dict(item)
 
-@app.put("/api/{table_name}/{item_id}")
+@router.put("/api/{table_name}/{item_id}")
 def update_item(
     item_id: int,
     item_data: dict, 
@@ -160,8 +122,7 @@ def update_item(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error updating item: {e}")
 
-
-@app.delete("/api/{table_name}/{item_id}")
+@router.delete("/api/{table_name}/{item_id}")
 def delete_item(
     item_id: int, 
     model_class: Any = Depends(get_model_class), 
@@ -172,7 +133,3 @@ def delete_item(
     """
     crud.delete_item(db, model_class, item_id)
     return {"message": "Item deleted successfully"}
-
-
-
-    

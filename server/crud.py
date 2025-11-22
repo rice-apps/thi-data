@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import select, inspect, cast, String
+from sqlalchemy import select, inspect, cast, String, func
 from typing import Any, List, Dict
 from fastapi import HTTPException
 
@@ -75,3 +75,23 @@ def update_item(db: Session, model_class: Any, item_id: int, item):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Error updating item: {e}")
+    
+def get_database_size(name: str, db: Session) -> Any:
+    """
+    Get the size of the entire database in a human-readable format.
+    """
+
+    stmt = select(
+        func.pg_size_pretty(
+            func.pg_total_relation_size(name)
+        )
+    )
+
+    try:
+        size = db.execute(stmt).scalar()
+        if size is None:
+             raise HTTPException(status_code=404, detail="Table not found")
+
+        return {"table": name, "size": size}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error getting database size: {e}")

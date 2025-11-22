@@ -31,7 +31,7 @@ export default function LoginPage() {
     } else {
       console.log("Login info correct");
       // Login successful, redirect to home page
-      router.push("/");
+      router.push("/homescreen");
       router.refresh(); // Refresh to update server-side session
     }
   }
