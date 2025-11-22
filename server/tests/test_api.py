@@ -8,7 +8,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir) 
 
-from main import get_db, get_model_class
+from deps import get_db, get_model_class
 import crud
 from database import Base, reflect_db
 
