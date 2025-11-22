@@ -15,6 +15,21 @@ def get_all_tables():
     """
     return {"tables": list(Base.classes.keys())}
 
+@router.get("/api/get_size/{table_name}")
+def get_size(
+    table_name: str,
+    db: Session = Depends(get_db)
+) -> dict:
+    """
+    Get the size of a specific table (e.g. KB, MB, GB).
+    """
+    try:
+        size_info = crud.get_database_size(table_name, db)
+        return size_info
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error getting size: {e}")
+
+
 @router.get("/api/{table_name}")
 def get_all_items(
     model_class: Any = Depends(get_model_class), 
@@ -106,7 +121,6 @@ def update_item(
         return crud.model_to_dict(new_item)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error updating item: {e}")
-
 
 @router.delete("/api/{table_name}/{item_id}")
 def delete_item(
