@@ -6,9 +6,14 @@ import { getSupabase } from "@/utils/supabase/client";
 
 interface Table {
   name: string;
-  uploadedBy: string;
-  dateUploaded: string;
-  dateModified: string;
+  uploadedBy: string | null;
+  dateUploaded: string | null;
+  dateModified: string | null;
+  size: string | null;
+}
+
+interface TablesResponse {
+  tables: Table[];
 }
 
 export default function HomeScreen() {
@@ -20,19 +25,13 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("http://localhost:8000/api/tables")
+    fetch("http://localhost:8000/api/tables_with_metadata")
       .then((response) => {
         if (!response.ok) throw new Error("Failed to fetch tables");
         return response.json();
       })
-      .then((data: { tables: string[] }) => {
-        const tablesWithMeta: Table[] = data.tables.map((tableName) => ({
-          name: tableName,
-          uploadedBy: "Admin",
-          dateUploaded: "11-21-2025",
-          dateModified: "11-22-2025",
-        }));
-        setTables(tablesWithMeta);
+      .then((data: TablesResponse) => {
+        setTables(data.tables);
       })
       .catch((error) => console.error(error))
       .finally(() => setLoading(false));
@@ -45,6 +44,10 @@ export default function HomeScreen() {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.push("/login");
+  };
+
+  const formatValue = (value: string | null, fallback: string = "—") => {
+    return value || fallback;
   };
 
   return (
@@ -102,10 +105,11 @@ export default function HomeScreen() {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           {/* Table Header */}
           <div className="grid grid-cols-12 gap-4 px-6 py-4 bg-slate-50 border-b border-slate-200 text-sm font-semibold text-slate-600">
-            <div className="col-span-5">Table Name</div>
+            <div className="col-span-4">Table Name</div>
             <div className="col-span-2">Uploaded By</div>
             <div className="col-span-2">Date Uploaded</div>
-            <div className="col-span-3">Date Modified</div>
+            <div className="col-span-2">Date Modified</div>
+            <div className="col-span-2 text-right">Size</div>
           </div>
 
           {/* Table Rows */}
@@ -132,10 +136,26 @@ export default function HomeScreen() {
                       : "hover:bg-slate-50 border-l-4 border-transparent"
                   }`}
                 >
-                  <div className="col-span-5 font-medium text-slate-800">{table.name}</div>
-                  <div className="col-span-2 text-slate-600">{table.uploadedBy}</div>
-                  <div className="col-span-2 text-slate-600">{table.dateUploaded}</div>
-                  <div className="col-span-3 text-slate-600">{table.dateModified}</div>
+                  <div className="col-span-4 font-medium text-slate-800">{table.name}</div>
+                  <div className={`col-span-2 ${table.uploadedBy ? "text-slate-600" : "text-slate-400 italic"}`}>
+                    {formatValue(table.uploadedBy)}
+                  </div>
+                  <div className={`col-span-2 ${table.dateUploaded ? "text-slate-600" : "text-slate-400 italic"}`}>
+                    {formatValue(table.dateUploaded)}
+                  </div>
+                  <div className={`col-span-2 ${table.dateModified ? "text-slate-600" : "text-slate-400 italic"}`}>
+                    {formatValue(table.dateModified)}
+                  </div>
+                  <div className={`col-span-2 text-right ${table.size ? "text-slate-600" : "text-slate-400 italic"}`}>
+                    <span className="inline-flex items-center gap-1">
+                      {table.size && (
+                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                        </svg>
+                      )}
+                      {formatValue(table.size)}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
