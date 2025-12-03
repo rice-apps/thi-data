@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { getSupabase } from "@/utils/supabase/client";
 
 interface Table {
   name: string;
@@ -11,13 +11,13 @@ interface Table {
   dateModified: string;
 }
 
-const HomeScreen = () => {
+export default function HomeScreen() {
   const router = useRouter();
-  const supabase = createClientComponentClient();
+  const supabase = getSupabase();
   const [tables, setTables] = useState<Table[]>([]);
   const [search, setSearch] = useState("");
   const [hoveredTable, setHoveredTable] = useState<string | null>(null);
-  const [hover, setHover] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetch("http://localhost:8000/api/tables")
@@ -28,85 +28,120 @@ const HomeScreen = () => {
       .then((data: { tables: string[] }) => {
         const tablesWithMeta: Table[] = data.tables.map((tableName) => ({
           name: tableName,
-          uploadedBy: "Admin",       
-          dateUploaded: "11-21-2025",   
-          dateModified: "11-22-2025"   
+          uploadedBy: "Admin",
+          dateUploaded: "11-21-2025",
+          dateModified: "11-22-2025",
         }));
         setTables(tablesWithMeta);
       })
-      .catch((error) => console.error(error));
+      .catch((error) => console.error(error))
+      .finally(() => setLoading(false));
   }, []);
 
-    const filteredTables = tables.filter((table) =>
+  const filteredTables = tables.filter((table) =>
     table?.name?.toLowerCase().includes(search.toLowerCase())
-    );
+  );
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
 
   return (
-    <div style={{position: "relative", padding: "2rem", paddingTop: "1rem", fontFamily: "sans-serif" }}>
-      <div style={{position: "absolute", top: "1rem", right: "2rem" }}>
-        <button
-          onClick={async () => {
-            await supabase.auth.signOut();
-            router.push("/login");
-          }}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-        style={{
-            padding: "0.4rem 0.8rem",
-            borderRadius: "6px",
-            border: `1px solid ${hover ? "red" : "#f0b1b1ff"}`,
-            backgroundColor: "#fcccccff",
-            cursor: "pointer"
-            }}
-            >
-          Sign Out
-        </button>
-      </div>
-
-      <h1 style={{ fontSize: "1.75rem", marginBottom: "1rem", textAlign: "center" }}>
-        Texas Hearing Institute Databases
-      </h1>
-
-      <input
-        type="text"
-        placeholder="Search tables"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{ 
-            padding: "0.5rem", 
-            fontSize: "1rem", 
-            width: "500px", 
-            borderRadius: "15px", 
-            border: "1px solid #ccc", 
-            margin: "0 auto 1rem auto", 
-            display: "block" }}
-      />
-
-      <div style={{ display: "flex", fontWeight: "bold", padding: "0.5rem 1rem" }}>
-        <div style={{ flex: 2 }}>Table Name</div>
-        <div style={{ flex: 1 }}>Uploaded By</div>
-        <div style={{ flex: 1 }}>Date Uploaded</div>
-        <div style={{ flex: 1 }}>Date Modified</div>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        {filteredTables.map((table) => (
-          <div
-            key={table.name}
-            style={{ backgroundColor: "#cfeff8ff", display: "flex", padding: "0.5rem 1rem", border: hoveredTable === table.name ? "1px solid #1c66bbff" : "1px solid #ddd", borderRadius: "5px", cursor: "pointer"}}
-            onMouseEnter={() => setHoveredTable(table.name)}
-            onMouseLeave={() => setHoveredTable(null)}
-            onClick={() => router.push(`/tables/${table.name}`)}
-          >
-            <div style={{ flex: 2 }}>{table.name}</div>
-            <div style={{ flex: 1 }}>{table.uploadedBy}</div>
-            <div style={{ flex: 1 }}>{table.dateUploaded}</div>
-            <div style={{ flex: 1 }}>{table.dateModified}</div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-50">
+      {/* Header */}
+      <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1c66bb] to-[#0d4a8f] flex items-center justify-center">
+              <span className="text-white font-bold text-lg">T</span>
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold text-slate-800">Texas Hearing Institute</h1>
+              <p className="text-xs text-slate-500">Data Warehouse</p>
+            </div>
           </div>
-        ))}
-      </div>
+          <button
+            onClick={handleSignOut}
+            className="px-4 py-2 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 hover:border-red-300 transition-all duration-200"
+          >
+            Sign Out
+          </button>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {/* Search Bar */}
+        <div className="mb-8">
+          <div className="relative max-w-xl mx-auto">
+            <svg
+              className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search tables..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 text-slate-700 bg-white border border-slate-200 rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1c66bb]/30 focus:border-[#1c66bb] transition-all duration-200"
+            />
+          </div>
+        </div>
+
+        {/* Table List */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          {/* Table Header */}
+          <div className="grid grid-cols-12 gap-4 px-6 py-4 bg-slate-50 border-b border-slate-200 text-sm font-semibold text-slate-600">
+            <div className="col-span-5">Table Name</div>
+            <div className="col-span-2">Uploaded By</div>
+            <div className="col-span-2">Date Uploaded</div>
+            <div className="col-span-3">Date Modified</div>
+          </div>
+
+          {/* Table Rows */}
+          {loading ? (
+            <div className="px-6 py-12 text-center text-slate-500">
+              <div className="inline-block w-6 h-6 border-2 border-[#1c66bb] border-t-transparent rounded-full animate-spin mb-3"></div>
+              <p>Loading tables...</p>
+            </div>
+          ) : filteredTables.length === 0 ? (
+            <div className="px-6 py-12 text-center text-slate-500">
+              <p>No tables found</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {filteredTables.map((table) => (
+                <div
+                  key={table.name}
+                  onClick={() => router.push(`/dataview/${table.name}`)}
+                  onMouseEnter={() => setHoveredTable(table.name)}
+                  onMouseLeave={() => setHoveredTable(null)}
+                  className={`grid grid-cols-12 gap-4 px-6 py-4 cursor-pointer transition-all duration-200 ${
+                    hoveredTable === table.name
+                      ? "bg-[#cfeff8] border-l-4 border-[#1c66bb]"
+                      : "hover:bg-slate-50 border-l-4 border-transparent"
+                  }`}
+                >
+                  <div className="col-span-5 font-medium text-slate-800">{table.name}</div>
+                  <div className="col-span-2 text-slate-600">{table.uploadedBy}</div>
+                  <div className="col-span-2 text-slate-600">{table.dateUploaded}</div>
+                  <div className="col-span-3 text-slate-600">{table.dateModified}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </main>
     </div>
   );
-};
-
-export default HomeScreen;
+}
