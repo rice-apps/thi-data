@@ -35,7 +35,9 @@ export default function DataTable({ tablename, initialData, columns }: DataTable
     try {
       const resp = await fetch(`${backendUrl}/api/${encodeURIComponent(tablename)}`);
       if (!resp.ok) throw new Error("Failed to fetch data");
-      const newData = await resp.json();
+      const json = await resp.json();
+      // Handle the new response shape { data: [...], total: 123 }
+      const newData = Array.isArray(json) ? json : (json.data || []);
       setData(newData);
     } catch (err: any) {
       showError(err.message);
@@ -72,7 +74,7 @@ export default function DataTable({ tablename, initialData, columns }: DataTable
         }
       });
 
-      const resp = await fetch(`${backendUrl}/api/table/${encodeURIComponent(tablename)}`, {
+      const resp = await fetch(`${backendUrl}/api/${encodeURIComponent(tablename)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
