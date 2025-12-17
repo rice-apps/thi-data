@@ -3,34 +3,20 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabase } from "@/utils/supabase/client";
-
-interface Table {
-  name: string;
-  uploadedBy: string | null;
-  dateUploaded: string | null;
-  dateModified: string | null;
-  size: string | null;
-}
-
-interface TablesResponse {
-  tables: Table[];
-}
+import ApiService from "@/services/api";
+import { TableMetadata } from "@/services/types";
 
 export default function HomeScreen() {
   const router = useRouter();
   const supabase = getSupabase();
-  const [tables, setTables] = useState<Table[]>([]);
+  const [tables, setTables] = useState<TableMetadata[]>([]);
   const [search, setSearch] = useState("");
   const [hoveredTable, setHoveredTable] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("http://localhost:8000/api/tables_with_metadata")
-      .then((response) => {
-        if (!response.ok) throw new Error("Failed to fetch tables");
-        return response.json();
-      })
-      .then((data: TablesResponse) => {
+    ApiService.getTablesWithMetadata()
+      .then((data) => {
         setTables(data.tables);
       })
       .catch((error) => console.error(error))
