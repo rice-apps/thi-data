@@ -1,16 +1,16 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { getSupabase } from "@/utils/supabase/client";
-import ApiService from "@/services/api";
-import { TableMetadata } from "@/services/types";
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { getSupabase } from '@/utils/supabase/client';
+import ApiService from '@/services/api';
+import { TableMetadata } from '@/services/types';
 
 export default function HomeScreen() {
   const router = useRouter();
   const supabase = getSupabase();
   const [tables, setTables] = useState<TableMetadata[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState('');
   const [hoveredTable, setHoveredTable] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -29,10 +29,10 @@ export default function HomeScreen() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    router.push("/login");
+    router.push('/login');
   };
 
-  const formatValue = (value: string | null, fallback: string = "—") => {
+  const formatValue = (value: string | null, fallback: string = '—') => {
     return value || fallback;
   };
 
@@ -46,7 +46,9 @@ export default function HomeScreen() {
               <span className="text-white font-bold text-lg">T</span>
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-slate-800">Texas Hearing Institute</h1>
+              <h1 className="text-xl font-semibold text-slate-800">
+                Texas Hearing Institute
+              </h1>
               <p className="text-xs text-slate-500">Data Warehouse</p>
             </div>
           </div>
@@ -118,25 +120,45 @@ export default function HomeScreen() {
                   onMouseLeave={() => setHoveredTable(null)}
                   className={`grid grid-cols-12 gap-4 px-6 py-4 cursor-pointer transition-all duration-200 ${
                     hoveredTable === table.name
-                      ? "bg-[#cfeff8] border-l-4 border-[#1c66bb]"
-                      : "hover:bg-slate-50 border-l-4 border-transparent"
+                      ? 'bg-[#cfeff8] border-l-4 border-[#1c66bb]'
+                      : 'hover:bg-slate-50 border-l-4 border-transparent'
                   }`}
                 >
-                  <div className="col-span-4 font-medium text-slate-800">{table.name}</div>
-                  <div className={`col-span-2 ${table.uploadedBy ? "text-slate-600" : "text-slate-400 italic"}`}>
+                  <div className="col-span-4 font-medium text-slate-800">
+                    {table.name}
+                  </div>
+                  <div
+                    className={`col-span-2 ${table.uploadedBy ? 'text-slate-600' : 'text-slate-400 italic'}`}
+                  >
                     {formatValue(table.uploadedBy)}
                   </div>
-                  <div className={`col-span-2 ${table.dateUploaded ? "text-slate-600" : "text-slate-400 italic"}`}>
+                  <div
+                    className={`col-span-2 ${table.dateUploaded ? 'text-slate-600' : 'text-slate-400 italic'}`}
+                  >
                     {formatValue(table.dateUploaded)}
                   </div>
-                  <div className={`col-span-2 ${table.dateModified ? "text-slate-600" : "text-slate-400 italic"}`}>
+                  <div
+                    className={`col-span-2 ${table.dateModified ? 'text-slate-600' : 'text-slate-400 italic'}`}
+                  >
                     {formatValue(table.dateModified)}
                   </div>
-                  <div className={`col-span-2 text-right ${table.size ? "text-slate-600" : "text-slate-400 italic"}`}>
+                  <div
+                    className={`col-span-2 text-right ${table.size ? 'text-slate-600' : 'text-slate-400 italic'}`}
+                  >
                     <span className="inline-flex items-center gap-1">
                       {table.size && (
-                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                        <svg
+                          className="w-4 h-4 text-slate-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"
+                          />
                         </svg>
                       )}
                       {formatValue(table.size)}

@@ -1,16 +1,16 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { getSupabase } from "@/utils/supabase/client";
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { getSupabase } from '@/utils/supabase/client';
 
 export default function SignupPage() {
   const router = useRouter();
   const [form, setForm] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    password: "",
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -40,8 +40,8 @@ export default function SignupPage() {
     if (error) {
       setError(error.message);
     } else {
-      alert("Account created! Check your email for verification.");
-      router.push("/login");
+      alert('Account created! Check your email for verification.');
+      router.push('/login');
     }
   };
 
@@ -53,15 +53,22 @@ export default function SignupPage() {
           <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-[#1c66bb] to-[#0d4a8f] flex items-center justify-center shadow-lg shadow-blue-500/20 mb-4">
             <span className="text-white font-bold text-2xl">T</span>
           </div>
-          <h1 className="text-2xl font-semibold text-slate-800">Create Account</h1>
+          <h1 className="text-2xl font-semibold text-slate-800">
+            Create Account
+          </h1>
           <p className="text-slate-500 mt-1">Join Texas Hearing Institute</p>
         </div>
 
         {/* Signup Form */}
-        <form onSubmit={handleSignup} className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-200 p-8 space-y-5">
+        <form
+          onSubmit={handleSignup}
+          className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-200 p-8 space-y-5"
+        >
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">First Name</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                First Name
+              </label>
               <input
                 type="text"
                 name="firstName"
@@ -73,7 +80,9 @@ export default function SignupPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Last Name</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Last Name
+              </label>
               <input
                 type="text"
                 name="lastName"
@@ -87,7 +96,9 @@ export default function SignupPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Email</label>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Email
+            </label>
             <input
               type="email"
               name="email"
@@ -100,7 +111,9 @@ export default function SignupPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Password</label>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Password
+            </label>
             <input
               type="password"
               name="password"
@@ -129,13 +142,16 @@ export default function SignupPage() {
                 Creating account...
               </span>
             ) : (
-              "Create Account"
+              'Create Account'
             )}
           </button>
 
           <p className="text-center text-sm text-slate-500">
-            Already have an account?{" "}
-            <a href="/login" className="text-[#1c66bb] hover:underline font-medium">
+            Already have an account?{' '}
+            <a
+              href="/login"
+              className="text-[#1c66bb] hover:underline font-medium"
+            >
               Sign in
             </a>
           </p>

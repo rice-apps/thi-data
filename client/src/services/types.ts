@@ -5,11 +5,10 @@ export interface PaginatedResponse<T> {
   limit: number;
 }
 
-export type TableCellValue = string | number | boolean | null;
+export type TableCellValue = string | number | boolean | null | undefined;
 
-export type TableRow = {
+export type TableRow = Record<string, TableCellValue> & {
   id?: number | string;
-  [key: string]: TableCellValue | undefined;
 };
 
 export interface TableSchemaResponse {

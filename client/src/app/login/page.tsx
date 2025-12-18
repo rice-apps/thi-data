@@ -1,14 +1,14 @@
 // src/app/login/page.tsx
-"use client";
+'use client';
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { getSupabase } from "@/utils/supabase/client";
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { getSupabase } from '@/utils/supabase/client';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -18,14 +18,17 @@ export default function LoginPage() {
     setLoading(true);
 
     const supabase = getSupabase();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
     setLoading(false);
 
     if (error) {
       setError(error.message);
     } else {
-      router.push("/homescreen");
+      router.push('/homescreen');
       router.refresh();
     }
   };
@@ -38,14 +41,21 @@ export default function LoginPage() {
           <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-[#1c66bb] to-[#0d4a8f] flex items-center justify-center shadow-lg shadow-blue-500/20 mb-4">
             <span className="text-white font-bold text-2xl">T</span>
           </div>
-          <h1 className="text-2xl font-semibold text-slate-800">Texas Hearing Institute</h1>
+          <h1 className="text-2xl font-semibold text-slate-800">
+            Texas Hearing Institute
+          </h1>
           <p className="text-slate-500 mt-1">Data Warehouse Portal</p>
         </div>
 
         {/* Login Form */}
-        <form onSubmit={handleLogin} className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-200 p-8 space-y-5">
+        <form
+          onSubmit={handleLogin}
+          className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-200 p-8 space-y-5"
+        >
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Email</label>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Email
+            </label>
             <input
               type="email"
               placeholder="you@texashearing.org"
@@ -57,7 +67,9 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Password</label>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Password
+            </label>
             <input
               type="password"
               placeholder="••••••••"
@@ -85,13 +97,16 @@ export default function LoginPage() {
                 Signing in...
               </span>
             ) : (
-              "Sign In"
+              'Sign In'
             )}
           </button>
 
           <p className="text-center text-sm text-slate-500">
-            Don't have an account?{" "}
-            <a href="/signup" className="text-[#1c66bb] hover:underline font-medium">
+            Don&apos;t have an account?{' '}
+            <a
+              href="/signup"
+              className="text-[#1c66bb] hover:underline font-medium"
+            >
               Create one
             </a>
           </p>
