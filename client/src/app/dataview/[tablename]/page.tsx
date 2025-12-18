@@ -2,9 +2,9 @@ import React from 'react';
 import Link from 'next/link';
 import { loginResult } from '@/utils/checklogin';
 import { redirect } from 'next/navigation';
-import ApiService from '@/services/api';
-import { TableRow } from '@/services/types';
+import { TableRow } from '@/domain/DataService';
 import DataTable from './DataTable';
+import { ServiceFactory } from '@/di/ServiceFactory';
 
 type PageProps = {
   params: Promise<{ tablename: string }>;
@@ -21,13 +21,15 @@ export default async function DataViewPage(props: PageProps) {
   }
 
   // 2. Fetch Initial Data (First Page Only) & Schema
+  const dataService = ServiceFactory.getDataService();
+
   let data: TableRow[] = [];
   let columns: string[] = [];
   let error: string | null = null;
 
   try {
     // Fetch first 50 items
-    const dataResponse = await ApiService.getTableData(tablename, {
+    const dataResponse = await dataService.getTableData(tablename, {
       skip: 0,
       limit: 50,
     });
@@ -35,7 +37,7 @@ export default async function DataViewPage(props: PageProps) {
 
     // Fetch Schema
     try {
-      const schemaResponse = await ApiService.getTableSchema(tablename);
+      const schemaResponse = await dataService.getTableSchema(tablename);
       columns = schemaResponse?.columns || [];
     } catch {
       if (data.length > 0) {

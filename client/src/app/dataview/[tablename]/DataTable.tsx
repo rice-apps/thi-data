@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { TableRow } from '@/services/types';
-import { useServices } from '@/providers/ServiceProvider';
+import { TableRow } from '@/domain/DataService';
+import { useServices } from '@/di/ServiceProvider';
 
 interface DataTableProps {
   tablename: string;

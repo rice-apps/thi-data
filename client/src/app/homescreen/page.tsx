@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useServices } from '@/providers/ServiceProvider';
-import { TableMetadata } from '@/services/types';
+import { useServices } from '@/di/ServiceProvider';
+import { TableMetadata } from '@/domain/DataService';
 
 export default function HomeScreen() {
   const router = useRouter();

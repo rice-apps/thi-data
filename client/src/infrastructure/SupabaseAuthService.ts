@@ -1,5 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr';
-import { AuthService } from './AuthService';
+import { AuthService } from '@/domain/AuthService';
 
 export class SupabaseAuthService implements AuthService {
   private supabase;

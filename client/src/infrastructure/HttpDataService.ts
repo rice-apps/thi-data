@@ -1,12 +1,12 @@
-import { DataService } from './DataService';
-import { AuthService } from './AuthService';
+import { DataService } from '@/domain/DataService';
+import { AuthService } from '@/domain/AuthService';
 import {
   PaginatedResponse,
   TableRow,
   TableSchemaResponse,
   TableMetadata,
   PaginationParams,
-} from './types';
+} from '@/domain/DataService';
 
 export class HttpDataService implements DataService {
   private baseUrl: string;

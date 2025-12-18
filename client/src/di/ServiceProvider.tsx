@@ -1,10 +1,9 @@
 'use client';
 
 import React, { createContext, useContext, useMemo } from 'react';
-import { AuthService } from '@/services/AuthService';
-import { DataService } from '@/services/DataService';
-import { SupabaseAuthService } from '@/services/SupabaseAuthService';
-import { HttpDataService } from '@/services/HttpDataService';
+import { AuthService } from '@/domain/AuthService';
+import { DataService } from '@/domain/DataService';
+import { ServiceFactory } from '@/di/ServiceFactory';
 
 interface ServiceContextValue {
   authService: AuthService;
@@ -15,8 +14,8 @@ const ServiceContext = createContext<ServiceContextValue | null>(null);
 
 export function ServiceProvider({ children }: { children: React.ReactNode }) {
   const services = useMemo(() => {
-    const authService = new SupabaseAuthService();
-    const dataService = new HttpDataService(authService);
+    const authService = ServiceFactory.getAuthService();
+    const dataService = ServiceFactory.getDataService(authService);
 
     return { authService, dataService };
   }, []);
