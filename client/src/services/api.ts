@@ -5,6 +5,7 @@ import {
   TableMetadata,
   PaginationParams,
 } from './types';
+import { getCurrentUserName } from '@/utils/supabase/client';
 
 // Use environment variable or default to localhost
 const BACKEND_URL =
@@ -23,9 +24,9 @@ class ApiService {
       : endpoint;
     const url = `${BACKEND_URL.replace(/\/$/, '')}/api/${cleanEndpoint}`;
 
-    const headers = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...options.headers,
+      ...(options.headers as Record<string, string>),
     };
 
     const response = await fetch(url, { ...options, headers });
@@ -90,9 +91,9 @@ class ApiService {
 
   static async createRow(
     tableName: string,
-    data: Omit<TableRow, 'id'>,
-    userName?: string
+    data: Omit<TableRow, 'id'>
   ): Promise<TableRow> {
+    const userName = await getCurrentUserName();
     const headers: Record<string, string> = {};
     if (userName) headers['X-User-Name'] = userName;
 
@@ -106,9 +107,9 @@ class ApiService {
   static async updateRow(
     tableName: string,
     id: string | number,
-    data: Partial<TableRow>,
-    userName?: string
+    data: Partial<TableRow>
   ): Promise<TableRow> {
+    const userName = await getCurrentUserName();
     const headers: Record<string, string> = {};
     if (userName) headers['X-User-Name'] = userName;
 
@@ -121,9 +122,9 @@ class ApiService {
 
   static async deleteRow(
     tableName: string,
-    id: string | number,
-    userName?: string
+    id: string | number
   ): Promise<void> {
+    const userName = await getCurrentUserName();
     const headers: Record<string, string> = {};
     if (userName) headers['X-User-Name'] = userName;
 

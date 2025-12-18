@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { TableRow } from '@/services/types';
 import ApiService from '@/services/api';
-import { getCurrentUserName } from '@/utils/supabase/client';
+// REMOVED: import { getCurrentUserName } from '@/utils/supabase/client';
 
 interface DataTableProps {
   tablename: string;
@@ -39,11 +39,9 @@ export default function DataTable({
   const [formData, setFormData] = useState<TableRow>({});
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [currentUser, setCurrentUser] = useState<string>('');
+  // REMOVED: const [currentUser, setCurrentUser] = useState<string>('');
 
-  useEffect(() => {
-    getCurrentUserName().then(setCurrentUser);
-  }, []);
+  // REMOVED: useEffect(() => { ... getCurrentUserName ... }, []);
 
   const observerTarget = useRef<HTMLDivElement>(null);
   const isFirstRender = useRef(true);
@@ -223,7 +221,8 @@ export default function DataTable({
         }
       });
 
-      await ApiService.createRow(tablename, payload, currentUser);
+      // UPDATED: No longer passing currentUser
+      await ApiService.createRow(tablename, payload);
       await refreshData();
       setIsAddModalOpen(false);
       showSuccess('Row added successfully!');
@@ -254,11 +253,11 @@ export default function DataTable({
       // Remove 'id' from the payload because the backend forbids updating primary keys
       delete payload.id;
 
+      // UPDATED: No longer passing currentUser
       await ApiService.updateRow(
         tablename,
         selectedRow.id as string,
-        payload,
-        currentUser
+        payload
       );
       await refreshData();
       setIsEditModalOpen(false);
@@ -283,10 +282,10 @@ export default function DataTable({
     if (!selectedRow) return;
     setLoading(true);
     try {
+      // UPDATED: No longer passing currentUser
       await ApiService.deleteRow(
         tablename,
-        selectedRow.id as string,
-        currentUser
+        selectedRow.id as string
       );
       await refreshData();
       setIsDeleteModalOpen(false);
