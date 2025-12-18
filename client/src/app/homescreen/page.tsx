@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useServices } from '@/di/ServiceProvider';
-import { TableMetadata } from '@/domain/DataService';
+import { useServices } from '@/services';
+import type { TableMetadata } from '@/types';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -38,7 +38,6 @@ export default function HomeScreen() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-50">
-      {/* Header */}
       <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -61,9 +60,7 @@ export default function HomeScreen() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Search Bar */}
         <div className="mb-8">
           <div className="relative max-w-xl mx-auto">
             <svg
@@ -89,9 +86,7 @@ export default function HomeScreen() {
           </div>
         </div>
 
-        {/* Table List */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          {/* Table Header */}
           <div className="grid grid-cols-12 gap-4 px-6 py-4 bg-slate-50 border-b border-slate-200 text-sm font-semibold text-slate-600">
             <div className="col-span-4">Table Name</div>
             <div className="col-span-2">Uploaded By</div>
@@ -100,7 +95,6 @@ export default function HomeScreen() {
             <div className="col-span-2 text-right">Size</div>
           </div>
 
-          {/* Table Rows */}
           {loading ? (
             <div className="px-6 py-12 text-center text-slate-500">
               <div className="inline-block w-6 h-6 border-2 border-[#1c66bb] border-t-transparent rounded-full animate-spin mb-3"></div>

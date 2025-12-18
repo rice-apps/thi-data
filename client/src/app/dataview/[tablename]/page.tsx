@@ -2,9 +2,9 @@ import React from 'react';
 import Link from 'next/link';
 import { loginResult } from '@/utils/checklogin';
 import { redirect } from 'next/navigation';
-import { TableRow } from '@/domain/DataService';
+import { ServiceFactory } from '@/services';
+import type { TableRow } from '@/types';
 import DataTable from './DataTable';
-import { ServiceFactory } from '@/di/ServiceFactory';
 
 type PageProps = {
   params: Promise<{ tablename: string }>;
@@ -14,13 +14,11 @@ export default async function DataViewPage(props: PageProps) {
   const params = await props.params;
   const { tablename } = params;
 
-  // 1. Check Authentication
   const user = await loginResult();
   if (!user) {
     redirect('/login');
   }
 
-  // 2. Fetch Initial Data (First Page Only) & Schema
   const dataService = ServiceFactory.getDataService();
 
   let data: TableRow[] = [];
@@ -28,14 +26,12 @@ export default async function DataViewPage(props: PageProps) {
   let error: string | null = null;
 
   try {
-    // Fetch first 50 items
     const dataResponse = await dataService.getTableData(tablename, {
       skip: 0,
       limit: 50,
     });
     data = dataResponse?.data || [];
 
-    // Fetch Schema
     try {
       const schemaResponse = await dataService.getTableSchema(tablename);
       columns = schemaResponse?.columns || [];
@@ -52,7 +48,6 @@ export default async function DataViewPage(props: PageProps) {
     }
   }
 
-  // 3. Render Error State
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-50 p-8">
@@ -74,7 +69,6 @@ export default async function DataViewPage(props: PageProps) {
     );
   }
 
-  // Pass data to DataTable which handles the full page layout
   return (
     <DataTable tablename={tablename} initialData={data} columns={columns} />
   );

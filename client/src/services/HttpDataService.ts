@@ -1,19 +1,21 @@
-import { DataService } from '@/domain/DataService';
-import { AuthService } from '@/domain/AuthService';
-import {
-  PaginatedResponse,
+import type {
   TableRow,
-  TableSchemaResponse,
   TableMetadata,
   PaginationParams,
-} from '@/domain/DataService';
+  PaginatedResponse,
+  TableSchemaResponse,
+} from '@/types';
 
-export class HttpDataService implements DataService {
+type AuthProvider = {
+  getCurrentUserName(): Promise<string>;
+};
+
+export class HttpDataService {
   private baseUrl: string;
-  private authService: AuthService;
+  private authProvider: AuthProvider;
 
-  constructor(authService: AuthService, baseUrl?: string) {
-    this.authService = authService;
+  constructor(authProvider: AuthProvider, baseUrl?: string) {
+    this.authProvider = authProvider;
     this.baseUrl =
       baseUrl || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
   }
@@ -27,7 +29,7 @@ export class HttpDataService implements DataService {
       : endpoint;
     const url = `${this.baseUrl.replace(/\/$/, '')}/api/${cleanEndpoint}`;
 
-    const userName = await this.authService.getCurrentUserName();
+    const userName = await this.authProvider.getCurrentUserName();
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',

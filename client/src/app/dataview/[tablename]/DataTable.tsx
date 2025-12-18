@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { TableRow } from '@/domain/DataService';
-import { useServices } from '@/di/ServiceProvider';
+import { useServices } from '@/services';
+import type { TableRow, PaginationParams, PaginatedResponse } from '@/types';
 
-interface DataTableProps {
+type DataTableProps = {
   tablename: string;
   initialData: TableRow[];
   columns: string[];
-}
+};
 
 const PAGE_SIZE = 50;
 
@@ -20,19 +20,16 @@ export default function DataTable({
 }: DataTableProps) {
   const { dataService } = useServices();
 
-  // Data State
   const [data, setData] = useState<TableRow[]>(initialData);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
 
-  // Search State
   const [search, setSearch] = useState('');
   const [selectedColumn, setSelectedColumn] = useState(columns[0] || 'id');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  // UI State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -44,16 +41,13 @@ export default function DataTable({
   const observerTarget = useRef<HTMLDivElement>(null);
   const isFirstRender = useRef(true);
 
-  // Handle Debounce
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(search);
     }, 150);
-
     return () => clearTimeout(handler);
   }, [search]);
 
-  // Reset and Fetch on Search/Column Change
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
@@ -64,8 +58,11 @@ export default function DataTable({
       setInitialLoading(true);
       setPage(1);
       try {
-        const paginationParams = { skip: 0, limit: PAGE_SIZE };
-        let response;
+        const paginationParams: PaginationParams = {
+          skip: 0,
+          limit: PAGE_SIZE,
+        };
+        let response: PaginatedResponse<TableRow>;
 
         if (debouncedSearch) {
           response = await dataService.searchTableData(
@@ -94,15 +91,14 @@ export default function DataTable({
     fetchFirstPage();
   }, [debouncedSearch, selectedColumn, tablename, dataService]);
 
-  // Infinite Scroll: Fetch Next Page
   const loadMore = useCallback(async () => {
     if (loading || !hasMore) return;
 
     setLoading(true);
     try {
       const skip = page * PAGE_SIZE;
-      const paginationParams = { skip, limit: PAGE_SIZE };
-      let response;
+      const paginationParams: PaginationParams = { skip, limit: PAGE_SIZE };
+      let response: PaginatedResponse<TableRow>;
 
       if (debouncedSearch) {
         response = await dataService.searchTableData(
@@ -137,7 +133,6 @@ export default function DataTable({
     dataService,
   ]);
 
-  // Intersection Observer
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -165,7 +160,6 @@ export default function DataTable({
     };
   }, [loadMore, hasMore, loading, initialLoading]);
 
-  // Helpers
   const showSuccess = (msg: string) => {
     setSuccessMessage(msg);
     setTimeout(() => setSuccessMessage(null), 3000);
@@ -178,7 +172,7 @@ export default function DataTable({
 
   const refreshData = async () => {
     setPage(1);
-    const paginationParams = { skip: 0, limit: PAGE_SIZE };
+    const paginationParams: PaginationParams = { skip: 0, limit: PAGE_SIZE };
     try {
       const response = debouncedSearch
         ? await dataService.searchTableData(
@@ -195,7 +189,6 @@ export default function DataTable({
     }
   };
 
-  // CRUD Handlers
   const handleAdd = () => {
     const emptyForm: TableRow = {};
     columns.forEach((col) => (emptyForm[col] = ''));
@@ -299,7 +292,6 @@ export default function DataTable({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-50">
-      {/* HEADER WITH SEARCH */}
       <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col md:flex-row md:items-center gap-4 justify-between">
           <div className="flex items-center gap-4 min-w-fit">
@@ -331,7 +323,6 @@ export default function DataTable({
             </div>
           </div>
 
-          {/* Search Controls */}
           <div className="flex-1 w-full md:max-w-2xl flex gap-2">
             <div className="relative shrink-0">
               <select
@@ -387,9 +378,7 @@ export default function DataTable({
         </div>
       </header>
 
-      {/* MAIN CONTENT */}
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Toast Notifications */}
         {successMessage && (
           <div className="fixed top-20 right-4 z-[60] bg-green-500 text-white px-6 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
             <span>{successMessage}</span>
@@ -401,7 +390,6 @@ export default function DataTable({
           </div>
         )}
 
-        {/* Action Bar */}
         <div className="flex justify-between items-center mb-4">
           <div className="text-sm text-slate-500 px-1">
             Showing {data.length} row{data.length !== 1 ? 's' : ''}
@@ -427,7 +415,6 @@ export default function DataTable({
           </button>
         </div>
 
-        {/* Data Table */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -523,7 +510,6 @@ export default function DataTable({
             </table>
           </div>
 
-          {/* Loading Spinner / Infinite Scroll Target */}
           <div ref={observerTarget} className="p-6 text-center">
             {(loading || initialLoading) && (
               <div className="inline-block w-6 h-6 border-2 border-[#1c66bb] border-t-transparent rounded-full animate-spin"></div>
@@ -535,7 +521,6 @@ export default function DataTable({
         </div>
       </main>
 
-      {/* MODALS */}
       {(isAddModalOpen || isEditModalOpen) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
