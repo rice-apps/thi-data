@@ -90,31 +90,46 @@ class ApiService {
 
   static async createRow(
     tableName: string,
-    data: Omit<TableRow, 'id'>
+    data: Omit<TableRow, 'id'>,
+    userName?: string
   ): Promise<TableRow> {
+    const headers: Record<string, string> = {};
+    if (userName) headers['X-User-Name'] = userName;
+
     return this.request<TableRow>(`${tableName}`, {
       method: 'POST',
       body: JSON.stringify(data),
+      headers,
     });
   }
 
   static async updateRow(
     tableName: string,
     id: string | number,
-    data: Partial<TableRow>
+    data: Partial<TableRow>,
+    userName?: string
   ): Promise<TableRow> {
+    const headers: Record<string, string> = {};
+    if (userName) headers['X-User-Name'] = userName;
+
     return this.request<TableRow>(`${tableName}/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+      headers,
     });
   }
 
   static async deleteRow(
     tableName: string,
-    id: string | number
+    id: string | number,
+    userName?: string
   ): Promise<void> {
+    const headers: Record<string, string> = {};
+    if (userName) headers['X-User-Name'] = userName;
+
     await this.request(`${tableName}/${id}`, {
       method: 'DELETE',
+      headers,
     });
   }
 }

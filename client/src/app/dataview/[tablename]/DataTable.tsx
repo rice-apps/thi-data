@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { TableRow } from '@/services/types';
 import ApiService from '@/services/api';
+import { getCurrentUserName } from '@/utils/supabase/client';
 
 interface DataTableProps {
   tablename: string;
@@ -38,6 +39,11 @@ export default function DataTable({
   const [formData, setFormData] = useState<TableRow>({});
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<string>('');
+
+  useEffect(() => {
+    getCurrentUserName().then(setCurrentUser);
+  }, []);
 
   const observerTarget = useRef<HTMLDivElement>(null);
   const isFirstRender = useRef(true);
@@ -217,7 +223,7 @@ export default function DataTable({
         }
       });
 
-      await ApiService.createRow(tablename, payload);
+      await ApiService.createRow(tablename, payload, currentUser);
       await refreshData();
       setIsAddModalOpen(false);
       showSuccess('Row added successfully!');
@@ -242,8 +248,18 @@ export default function DataTable({
     if (!selectedRow) return;
     setLoading(true);
     try {
+      // Create a copy of formData to avoid mutating state directly if we were using it elsewhere
       const payload: TableRow = { ...formData };
-      await ApiService.updateRow(tablename, selectedRow.id as string, payload);
+
+      // Remove 'id' from the payload because the backend forbids updating primary keys
+      delete payload.id;
+
+      await ApiService.updateRow(
+        tablename,
+        selectedRow.id as string,
+        payload,
+        currentUser
+      );
       await refreshData();
       setIsEditModalOpen(false);
       showSuccess('Row updated successfully!');
@@ -267,7 +283,11 @@ export default function DataTable({
     if (!selectedRow) return;
     setLoading(true);
     try {
-      await ApiService.deleteRow(tablename, selectedRow.id as string);
+      await ApiService.deleteRow(
+        tablename,
+        selectedRow.id as string,
+        currentUser
+      );
       await refreshData();
       setIsDeleteModalOpen(false);
       showSuccess('Row deleted successfully!');
