@@ -1,16 +1,15 @@
 from fastapi import APIRouter, HTTPException, Depends
 import crud
-from typing import Any, List
+from typing import Any
 from sqlalchemy.orm import Session
-from database import Base
-from deps import get_db, get_model_class
-from sqlalchemy import select, inspect, desc, func
+from core.database import Base
+from core.deps import get_db, get_model_class
+from sqlalchemy import inspect
 
 router = APIRouter()
 
 # Tables to hide from the user-facing list
 HIDDEN_TABLES = ["alembic_version", "metadata_creation", "metadata_updates"]
-
 
 @router.get("/api/tables")
 def get_all_tables():
@@ -28,6 +27,7 @@ def get_tables_with_metadata(db: Session = Depends(get_db)):
     """
     Get all tables with their metadata (uploaded by, date uploaded, date modified, size).
     Excludes internal metadata tables.
+    Uses bulk fetching for performance.
     """
     all_tables = list(Base.classes.keys())
     visible_tables = [t for t in all_tables if t not in HIDDEN_TABLES]
@@ -35,69 +35,11 @@ def get_tables_with_metadata(db: Session = Depends(get_db)):
     creation_model = Base.classes.get("metadata_creation")
     updates_model = Base.classes.get("metadata_updates")
     
-    result = []
+    # Bulk fetch all metadata in one go
+    # This matches the function defined in crud.py
+    results = crud.get_tables_metadata(db, visible_tables, creation_model, updates_model)
     
-    for table_name in visible_tables:
-        table_info = {
-            "name": table_name,
-            "uploadedBy": None,
-            "dateUploaded": None,
-            "dateModified": None,
-            "size": None,
-        }
-        
-        # Get table size
-        try:
-            size_stmt = select(
-                func.pg_size_pretty(func.pg_total_relation_size(table_name))
-            )
-            size = db.execute(size_stmt).scalar()
-            table_info["size"] = size
-        except Exception:
-            pass
-        
-        # Look up creation metadata
-        if creation_model:
-            try:
-                stmt = select(creation_model).where(creation_model.table_name == table_name)
-                creation_record = db.execute(stmt).scalars().first()
-                if creation_record:
-                    table_info["uploadedBy"] = getattr(creation_record, "created_by", None)
-                    created_at = getattr(creation_record, "created_at", None)
-                    if created_at:
-                        table_info["dateUploaded"] = created_at.strftime("%m-%d-%Y")
-            except Exception:
-                pass
-        
-        # Look up the most recent update metadata
-        if updates_model:
-            try:
-                if creation_model:
-                    creation_stmt = select(creation_model).where(creation_model.table_name == table_name)
-                    creation_record = db.execute(creation_stmt).scalars().first()
-                    if creation_record:
-                        creation_id = getattr(creation_record, "id", None)
-                        if creation_id:
-                            update_stmt = (
-                                select(updates_model)
-                                .where(updates_model.foreign_key == creation_id)
-                                .order_by(desc(updates_model.updated_at))
-                                .limit(1)
-                            )
-                            update_record = db.execute(update_stmt).scalars().first()
-                            if update_record:
-                                updated_at = getattr(update_record, "updated_at", None)
-                                if updated_at:
-                                    table_info["dateModified"] = updated_at.strftime("%m-%d-%Y")
-            except Exception:
-                pass
-        
-        if not table_info["dateModified"] and table_info["dateUploaded"]:
-            table_info["dateModified"] = table_info["dateUploaded"]
-        
-        result.append(table_info)
-    
-    return {"tables": result}
+    return {"tables": results}
 
 
 @router.get("/api/schema/{table_name}")
@@ -123,6 +65,8 @@ def get_size(
     """
     try:
         size_info = crud.get_database_size(table_name, db)
+        if not size_info:
+            raise HTTPException(status_code=404, detail="Table not found")
         return size_info
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error getting size: {e}")
