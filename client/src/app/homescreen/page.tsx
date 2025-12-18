@@ -2,33 +2,33 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getSupabase } from '@/utils/supabase/client';
-import ApiService from '@/services/api';
+import { useServices } from '@/providers/ServiceProvider';
 import { TableMetadata } from '@/services/types';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const supabase = getSupabase();
+  const { authService, dataService } = useServices();
   const [tables, setTables] = useState<TableMetadata[]>([]);
   const [search, setSearch] = useState('');
   const [hoveredTable, setHoveredTable] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    ApiService.getTablesWithMetadata()
+    dataService
+      .getTablesWithMetadata()
       .then((data) => {
         setTables(data.tables);
       })
       .catch((error) => console.error(error))
       .finally(() => setLoading(false));
-  }, []);
+  }, [dataService]);
 
   const filteredTables = tables.filter((table) =>
     table?.name?.toLowerCase().includes(search.toLowerCase())
   );
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await authService.signOut();
     router.push('/login');
   };
 

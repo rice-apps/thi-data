@@ -1,3 +1,5 @@
+import { DataService } from './DataService';
+import { AuthService } from './AuthService';
 import {
   PaginatedResponse,
   TableRow,
@@ -5,27 +7,31 @@ import {
   TableMetadata,
   PaginationParams,
 } from './types';
-import { getCurrentUserName } from '@/utils/supabase/client';
 
-// Use environment variable or default to localhost
-const BACKEND_URL =
-  process.env.BACKEND_URL ||
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  'http://localhost:8000';
+export class HttpDataService implements DataService {
+  private baseUrl: string;
+  private authService: AuthService;
 
-class ApiService {
-  private static async request<T>(
+  constructor(authService: AuthService, baseUrl?: string) {
+    this.authService = authService;
+    this.baseUrl =
+      baseUrl || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+  }
+
+  private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    // Ensure clean URL construction
     const cleanEndpoint = endpoint.startsWith('/')
       ? endpoint.slice(1)
       : endpoint;
-    const url = `${BACKEND_URL.replace(/\/$/, '')}/api/${cleanEndpoint}`;
+    const url = `${this.baseUrl.replace(/\/$/, '')}/api/${cleanEndpoint}`;
+
+    const userName = await this.authService.getCurrentUserName();
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      ...(userName ? { 'X-User-Name': userName } : {}),
       ...(options.headers as Record<string, string>),
     };
 
@@ -39,19 +45,19 @@ class ApiService {
     return response.json();
   }
 
-  static async getTablesWithMetadata(): Promise<{ tables: TableMetadata[] }> {
+  async getTablesWithMetadata(): Promise<{ tables: TableMetadata[] }> {
     return this.request<{ tables: TableMetadata[] }>('tables_with_metadata', {
       cache: 'no-store',
     });
   }
 
-  static async getTableSchema(tableName: string): Promise<TableSchemaResponse> {
+  async getTableSchema(tableName: string): Promise<TableSchemaResponse> {
     return this.request<TableSchemaResponse>(`schema/${tableName}`, {
       cache: 'no-store',
     });
   }
 
-  static async getTableData(
+  async getTableData(
     tableName: string,
     params?: PaginationParams
   ): Promise<PaginatedResponse<TableRow>> {
@@ -69,7 +75,7 @@ class ApiService {
     });
   }
 
-  static async searchTableData(
+  async searchTableData(
     tableName: string,
     column: string,
     value: string,
@@ -82,57 +88,39 @@ class ApiService {
       searchParams.append('limit', params.limit.toString());
 
     const queryString = searchParams.toString();
-    const endpoint = `${tableName}/search/${column}/${encodeURIComponent(value)}${queryString ? `?${queryString}` : ''}`;
+    const endpoint = `${tableName}/search/${column}/${encodeURIComponent(
+      value
+    )}${queryString ? `?${queryString}` : ''}`;
 
     return this.request<PaginatedResponse<TableRow>>(endpoint, {
       cache: 'no-store',
     });
   }
 
-  static async createRow(
+  async createRow(
     tableName: string,
     data: Omit<TableRow, 'id'>
   ): Promise<TableRow> {
-    const userName = await getCurrentUserName();
-    const headers: Record<string, string> = {};
-    if (userName) headers['X-User-Name'] = userName;
-
-    return this.request<TableRow>(`${tableName}`, {
+    return this.request<TableRow>(tableName, {
       method: 'POST',
       body: JSON.stringify(data),
-      headers,
     });
   }
 
-  static async updateRow(
+  async updateRow(
     tableName: string,
     id: string | number,
     data: Partial<TableRow>
   ): Promise<TableRow> {
-    const userName = await getCurrentUserName();
-    const headers: Record<string, string> = {};
-    if (userName) headers['X-User-Name'] = userName;
-
     return this.request<TableRow>(`${tableName}/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
-      headers,
     });
   }
 
-  static async deleteRow(
-    tableName: string,
-    id: string | number
-  ): Promise<void> {
-    const userName = await getCurrentUserName();
-    const headers: Record<string, string> = {};
-    if (userName) headers['X-User-Name'] = userName;
-
+  async deleteRow(tableName: string, id: string | number): Promise<void> {
     await this.request(`${tableName}/${id}`, {
       method: 'DELETE',
-      headers,
     });
   }
 }
-
-export default ApiService;

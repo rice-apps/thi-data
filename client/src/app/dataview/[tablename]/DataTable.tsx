@@ -3,8 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { TableRow } from '@/services/types';
-import ApiService from '@/services/api';
-// REMOVED: import { getCurrentUserName } from '@/utils/supabase/client';
+import { useServices } from '@/providers/ServiceProvider';
 
 interface DataTableProps {
   tablename: string;
@@ -19,6 +18,8 @@ export default function DataTable({
   initialData,
   columns,
 }: DataTableProps) {
+  const { dataService } = useServices();
+
   // Data State
   const [data, setData] = useState<TableRow[]>(initialData);
   const [page, setPage] = useState(1);
@@ -39,9 +40,6 @@ export default function DataTable({
   const [formData, setFormData] = useState<TableRow>({});
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  // REMOVED: const [currentUser, setCurrentUser] = useState<string>('');
-
-  // REMOVED: useEffect(() => { ... getCurrentUserName ... }, []);
 
   const observerTarget = useRef<HTMLDivElement>(null);
   const isFirstRender = useRef(true);
@@ -50,7 +48,7 @@ export default function DataTable({
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(search);
-    }, 150); // Reduced from 300ms
+    }, 150);
 
     return () => clearTimeout(handler);
   }, [search]);
@@ -70,14 +68,17 @@ export default function DataTable({
         let response;
 
         if (debouncedSearch) {
-          response = await ApiService.searchTableData(
+          response = await dataService.searchTableData(
             tablename,
             selectedColumn,
             debouncedSearch,
             paginationParams
           );
         } else {
-          response = await ApiService.getTableData(tablename, paginationParams);
+          response = await dataService.getTableData(
+            tablename,
+            paginationParams
+          );
         }
 
         const newData = response.data || [];
@@ -91,7 +92,7 @@ export default function DataTable({
     };
 
     fetchFirstPage();
-  }, [debouncedSearch, selectedColumn, tablename]);
+  }, [debouncedSearch, selectedColumn, tablename, dataService]);
 
   // Infinite Scroll: Fetch Next Page
   const loadMore = useCallback(async () => {
@@ -104,14 +105,14 @@ export default function DataTable({
       let response;
 
       if (debouncedSearch) {
-        response = await ApiService.searchTableData(
+        response = await dataService.searchTableData(
           tablename,
           selectedColumn,
           debouncedSearch,
           paginationParams
         );
       } else {
-        response = await ApiService.getTableData(tablename, paginationParams);
+        response = await dataService.getTableData(tablename, paginationParams);
       }
 
       const newData = response.data || [];
@@ -126,7 +127,15 @@ export default function DataTable({
     } finally {
       setLoading(false);
     }
-  }, [page, loading, hasMore, debouncedSearch, selectedColumn, tablename]);
+  }, [
+    page,
+    loading,
+    hasMore,
+    debouncedSearch,
+    selectedColumn,
+    tablename,
+    dataService,
+  ]);
 
   // Intersection Observer
   useEffect(() => {
@@ -172,13 +181,13 @@ export default function DataTable({
     const paginationParams = { skip: 0, limit: PAGE_SIZE };
     try {
       const response = debouncedSearch
-        ? await ApiService.searchTableData(
+        ? await dataService.searchTableData(
             tablename,
             selectedColumn,
             debouncedSearch,
             paginationParams
           )
-        : await ApiService.getTableData(tablename, paginationParams);
+        : await dataService.getTableData(tablename, paginationParams);
       setData(response.data || []);
       setHasMore((response.data?.length || 0) >= PAGE_SIZE);
     } catch {
@@ -221,8 +230,7 @@ export default function DataTable({
         }
       });
 
-      // UPDATED: No longer passing currentUser
-      await ApiService.createRow(tablename, payload);
+      await dataService.createRow(tablename, payload);
       await refreshData();
       setIsAddModalOpen(false);
       showSuccess('Row added successfully!');
@@ -247,18 +255,10 @@ export default function DataTable({
     if (!selectedRow) return;
     setLoading(true);
     try {
-      // Create a copy of formData to avoid mutating state directly if we were using it elsewhere
       const payload: TableRow = { ...formData };
-
-      // Remove 'id' from the payload because the backend forbids updating primary keys
       delete payload.id;
 
-      // UPDATED: No longer passing currentUser
-      await ApiService.updateRow(
-        tablename,
-        selectedRow.id as string,
-        payload
-      );
+      await dataService.updateRow(tablename, selectedRow.id as string, payload);
       await refreshData();
       setIsEditModalOpen(false);
       showSuccess('Row updated successfully!');
@@ -282,11 +282,7 @@ export default function DataTable({
     if (!selectedRow) return;
     setLoading(true);
     try {
-      // UPDATED: No longer passing currentUser
-      await ApiService.deleteRow(
-        tablename,
-        selectedRow.id as string
-      );
+      await dataService.deleteRow(tablename, selectedRow.id as string);
       await refreshData();
       setIsDeleteModalOpen(false);
       showSuccess('Row deleted successfully!');
