@@ -1,0 +1,17 @@
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: thi-rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI port
+    volumes:
+      - rabbitmq-lib:/var/lib/rabbitmq/
+      - rabbitmq-log:/var/log/rabbitmq
+
+volumes:
+  rabbitmq-lib:
+    driver: local
+  rabbitmq-log:
+    driver: local
