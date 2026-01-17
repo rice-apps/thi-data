@@ -12,6 +12,7 @@ export default function HomeScreen() {
   const [search, setSearch] = useState('');
   const [hoveredTable, setHoveredTable] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fabHovered, setFabHovered] = useState(false);
 
   useEffect(() => {
     dataService
@@ -164,6 +165,37 @@ export default function HomeScreen() {
           )}
         </div>
       </main>
+
+      {/* Floating Action Button */}
+      <button
+        onClick={() => router.push('/data_upload')}
+        onMouseEnter={() => setFabHovered(true)}
+        onMouseLeave={() => setFabHovered(false)}
+        className={`fixed bottom-8 right-8 h-14 bg-gradient-to-r from-[#1c66bb] to-[#0d4a8f] text-white font-medium rounded-full shadow-lg hover:shadow-xl hover:shadow-blue-500/25 transition-all duration-300 flex items-center overflow-hidden ${
+          fabHovered ? 'w-40 pl-4 pr-5 justify-start gap-2' : 'w-14 justify-center'
+        }`}
+      >
+        <svg
+          className="w-6 h-6 flex-shrink-0"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 4v16m8-8H4"
+          />
+        </svg>
+        <span
+          className={`whitespace-nowrap transition-opacity duration-300 ${
+            fabHovered ? 'opacity-100' : 'opacity-0 w-0'
+          }`}
+        >
+          Upload File
+        </span>
+      </button>
     </div>
   );
 }
