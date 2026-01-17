@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from core.database import reflect_db
-from api import metadata, tables, rows
+from api import metadata, tables, rows, reflect
 
 origins = [
     "http://localhost:3000",
@@ -31,9 +31,8 @@ def read_root():
 
 # Include Routers
 app.include_router(metadata.router)
+app.include_router(reflect.router)
 app.include_router(tables.router)
 app.include_router(rows.router)
-
-
 
     
