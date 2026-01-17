@@ -23,8 +23,4 @@ export class SupabaseAuthService {
     }
     return user?.email || 'Unknown User';
   }
-
-  async signOut(): Promise<void> {
-    await this.supabase.auth.signOut();
-  }
 }
