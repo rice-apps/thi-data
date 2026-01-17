@@ -27,3 +27,9 @@ class SearchCreatedByResponse(BaseModel):
 class FilterCreatedAtRequest(BaseModel):
     start_date: date
     end_date: date
+
+class CorruptedRowCreate(BaseModel):
+    target_table: str
+    row_id: str
+    error_reason: str | None = None
+

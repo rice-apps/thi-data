@@ -16,6 +16,7 @@ def get_one_item(db: Session, model_class: Any, item_id: int):
 
 def get_all_items(db: Session, model_class: Any):
     return db.scalars(select(model_class)).all()
+    
 
 def create_item(db: Session, model_class: Any, item_data: Dict[str, Any]):
     try:
