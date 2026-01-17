@@ -38,3 +38,4 @@ uvloop==0.22.1
 watchfiles==1.1.1
 websockets==15.0.1
 celery[amqp]==5.6.2
+sqlalchemy-dlock
