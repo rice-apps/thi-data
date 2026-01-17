@@ -13,6 +13,8 @@ class Settings(BaseModel):
     
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql+psycopg://{self.USER}:{self.PASSWORD}@{self.HOST}:{self.PORT}/{self.DBNAME}?sslmode=require"
+        db_url = f"postgresql+psycopg://{self.USER}:{self.PASSWORD}@{self.HOST}:{self.PORT}/{self.DBNAME}?sslmode=require"
+        print(f"DB_URL = {db_url}")
+        return db_url
 
 settings = Settings()

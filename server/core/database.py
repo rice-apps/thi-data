@@ -20,3 +20,4 @@ def reflect_db():
         logging.info(f"Tables reflected: {list(Base.classes.keys())}")
     except Exception as e:
         logging.error(f"Error reflecting database: {e}")
+        
