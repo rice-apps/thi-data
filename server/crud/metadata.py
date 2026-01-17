@@ -5,17 +5,15 @@ import logging
 
 def get_database_size(name: str, db: Session) -> Optional[Dict[str, str]]:
     """
-    Attempts to get table size. Safe for Postgres. 
-    Returns None if the DB dialect doesn't support pg_total_relation_size.
+    Get the total size of a table including indexes.
+    Returns None if the table doesn't exist or sizing is unsupported.
     """
     try:
-        stmt = select(func.pg_size_pretty(func.pg_total_relation_size(name)))
-        size = db.execute(stmt).scalar()
-        if size is None:
-             return None
-        return {"table": name, "size": size}
+        # Use quote_ident to prevent SQL injection and handle reserved words/spaces
+        stmt = text("SELECT pg_size_pretty(pg_total_relation_size(quote_ident(:name)))")
+        size = db.execute(stmt, {"name": name}).scalar()
+        return {"table": name, "size": size} if size else None
     except Exception:
-        # Gracefully fail for non-Postgres databases (SQLite, MySQL, etc.)
         return None
 
 def get_tables_metadata(
@@ -25,73 +23,52 @@ def get_tables_metadata(
     updates_model: Any
 ) -> List[Dict[str, Any]]:
     """
-    Efficiently fetches metadata for multiple tables.
-    - Uses bulk queries for creation/update records (ORM, DB-agnostic).
-    - Fetches all table sizes in a single query (Postgres optimized).
+    Fetch comprehensive metadata for a list of tables in a single operation.
     """
-    
-    # 1. Bulk Fetch Creation Records
-    creation_map = {} # table_name -> creation_record
-    if creation_model and table_names:
+    if not table_names:
+        return []
+
+    # 1. Bulk fetch creation records for all requested tables
+    creation_map = {}
+    if creation_model:
         try:
             stmt = select(creation_model).where(creation_model.table_name.in_(table_names))
             records = db.execute(stmt).scalars().all()
             creation_map = {r.table_name: r for r in records}
         except Exception as e:
-            logging.warning(f"Failed to fetch creation metadata: {e}")
+            logging.error(f"Metadata creation fetch failed: {e}")
 
-    # 2. Bulk Fetch Latest Updates
-    updates_map = {} # foreign_key -> update_record
+    # 2. Bulk fetch only the *latest* update record per table using Postgres DISTINCT ON
+    updates_map = {}
     if updates_model and creation_map:
         try:
-            creation_ids = [r.id for r in creation_map.values() if getattr(r, 'id', None)]
+            creation_ids = [r.id for r in creation_map.values() if hasattr(r, 'id')]
             if creation_ids:
                 stmt = (
                     select(updates_model)
+                    .distinct(updates_model.foreign_key)
                     .where(updates_model.foreign_key.in_(creation_ids))
-                    .order_by(desc(updates_model.updated_at))
+                    .order_by(updates_model.foreign_key, desc(updates_model.updated_at))
                 )
-                all_updates = db.execute(stmt).scalars().all()
-                for u in all_updates:
-                    fk = getattr(u, 'foreign_key', None)
-                    if fk and fk not in updates_map:
-                        updates_map[fk] = u
+                records = db.execute(stmt).scalars().all()
+                updates_map = {r.foreign_key: r for r in records}
         except Exception as e:
-            logging.warning(f"Failed to fetch update metadata: {e}")
+            logging.error(f"Metadata updates fetch failed: {e}")
 
-    # 3. Bulk Fetch All Table Sizes (Postgres optimized)
+    # 3. Bulk fetch all table sizes in a single query to eliminate N+1 roundtrips.
+    # Use CAST() instead of :: to avoid collision with SQLAlchemy parameter placeholders (:names).
     size_map = {}
-    if table_names:
-        try:
-            # Construct a single query to get all sizes
-            # We use pg_total_relation_size in a subquery or join-like structure
-            # A more portable but still bulk way is to union or use a values list
-            # For Postgres, we can query pg_class/pg_namespace or just mapping
-            
-            # Efficient bulk size query for Postgres
-            size_query = text("""
-                SELECT relname, pg_size_pretty(pg_total_relation_size(relid))
-                FROM (
-                    SELECT c.oid as relid, c.relname
-                    FROM pg_class c
-                    JOIN pg_namespace n ON n.oid = c.relkind
-                    WHERE c.relname = ANY(:names)
-                    AND c.relkind = 'r'
-                ) s
-            """)
-            # Actually, pg_total_relation_size accepts text as well (table name)
-            # Simplest bulk query:
-            size_query = text("""
-                SELECT t.name, pg_size_pretty(pg_total_relation_size(t.name::regclass))
-                FROM unnest(:names::text[]) AS t(name)
-            """)
-            
-            size_results = db.execute(size_query, {"names": table_names}).all()
-            size_map = {row[0]: row[1] for row in size_results}
-        except Exception as e:
-            logging.warning(f"Failed to fetch bulk sizes: {e}. Falling back to individual (or none).")
+    try:
+        size_query = text("""
+            SELECT name, pg_size_pretty(pg_total_relation_size(name))
+            FROM unnest(CAST(:names AS text[])) AS name
+        """)
+        size_results = db.execute(size_query, {"names": table_names}).all()
+        size_map = {row[0]: row[1] for row in size_results if row[1]}
+    except Exception as e:
+        logging.warning(f"Bulk size fetch failed: {e}")
 
-    # 4. Assemble Results
+    # 4. Assemble final metadata list
     results = []
     for name in table_names:
         info = {
@@ -102,23 +79,17 @@ def get_tables_metadata(
             "size": size_map.get(name)
         }
         
-        # Populate Creation Info
         c_rec = creation_map.get(name)
         if c_rec:
             info["uploadedBy"] = getattr(c_rec, "created_by", None)
-            c_at = getattr(c_rec, "created_at", None)
-            if c_at:
+            if c_at := getattr(c_rec, "created_at", None):
                 info["dateUploaded"] = c_at.strftime("%m-%d-%Y")
             
-            # Populate Update Info
-            c_id = getattr(c_rec, "id", None)
-            u_rec = updates_map.get(c_id)
-            if u_rec:
-                u_at = getattr(u_rec, "updated_at", None)
-                if u_at:
-                    info["dateModified"] = u_at.strftime("%m-%d-%Y")
+            u_rec = updates_map.get(getattr(c_rec, "id", None))
+            if u_rec and (u_at := getattr(u_rec, "updated_at", None)):
+                info["dateModified"] = u_at.strftime("%m-%d-%Y")
         
-        # Fallback
+        # Fallback to upload date if no explicit modification is recorded
         if not info["dateModified"] and info["dateUploaded"]:
              info["dateModified"] = info["dateUploaded"]
              
