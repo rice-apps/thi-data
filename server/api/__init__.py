@@ -1,3 +1,3 @@
-from . import metadata, tables, rows
+from . import metadata, tables, rows, upload
 
-__all__ = ["metadata", "tables", "rows"]
+__all__ = ["metadata", "tables", "rows", "upload"]

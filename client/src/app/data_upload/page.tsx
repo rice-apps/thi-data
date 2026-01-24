@@ -109,7 +109,7 @@ export default function DataUploadPage() {
         xhr.onerror = () => reject(new Error('Network error occurred'));
       });
 
-      xhr.open('POST', `${baseUrl}/api/upload`);
+      xhr.open('POST', `${baseUrl}/api/files/upload`);
       if (userName) {
         xhr.setRequestHeader('X-User-Name', userName);
       }
@@ -119,11 +119,6 @@ export default function DataUploadPage() {
 
       setUploadStatus('success');
       setUploadProgress(100);
-
-      // Redirect to homescreen after successful upload
-      setTimeout(() => {
-        router.push('/homescreen');
-      }, 2000);
     } catch (error) {
       setUploadStatus('error');
       setErrorMessage(
@@ -326,12 +321,7 @@ export default function DataUploadPage() {
                     d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                <div>
-                  <p className="text-green-600 font-medium">Upload successful!</p>
-                  <p className="text-green-600 text-sm">
-                    Redirecting to tables...
-                  </p>
-                </div>
+                <p className="text-green-600 font-medium">Upload successful!</p>
               </div>
             )}
 
