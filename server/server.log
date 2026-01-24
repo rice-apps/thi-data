@@ -1,0 +1,13 @@
+INFO:     Started server process [25822]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+DB_URL = postgresql+psycopg://postgres.sbulhiltlnhriclwrrdh:C4QemTMeEDwtQUbx@aws-1-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require
+INFO:     127.0.0.1:53076 - "POST /api/corrupted_rows HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53085 - "GET /api/corrupted_rows HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53093 - "DELETE /api/corrupted_rows/9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53096 - "GET /api/corrupted_rows HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53103 - "POST /api/metadata_creation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53114 - "GET /api/search_created_by?name=test_creator HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53121 - "GET /api/filter_created_at?start_date=2026-01-24&end_date=2026-01-24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53131 - "POST /api/metadata_update HTTP/1.1" 200 OK

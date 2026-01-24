@@ -30,10 +30,10 @@ def read_root():
     return {"Hello": "World"}
 
 # Include Routers
+app.include_router(corrupted_rows.router)
 app.include_router(metadata.router)
 app.include_router(reflect.router)
 app.include_router(tables.router)
 app.include_router(rows.router)
-app.include_router(corrupted_rows.router)
 
     

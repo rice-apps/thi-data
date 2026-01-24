@@ -2,6 +2,7 @@ from typing import Generator, Any
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from .database import SessionLocal, Base
+from .constants import HIDDEN_TABLES
 
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
@@ -11,6 +12,8 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 def get_model_class(table_name: str) -> Any:
+    if table_name in HIDDEN_TABLES:
+        raise HTTPException(status_code=403, detail=f"Access to table '{table_name}' is restricted.")
     model_class = Base.classes.get(table_name)
     if not model_class:
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found.")

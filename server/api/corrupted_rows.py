@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -13,17 +13,23 @@ CORRUPTED_ROWS_TABLE = "corrupted_rows"
 
 class CorruptedRowCreate(BaseModel):
     """Schema for creating a corrupted row entry."""
-    table_name: str
+    target_table: str
     row_id: str
-    error_message: str
+    error_reason: Optional[str] = None
+    error_column: Optional[str] = None
+    raw_row: Optional[Dict[str, Any]] = None
+    corrected_row: Optional[Dict[str, Any]] = None
 
 
 class CorruptedRowResponse(BaseModel):
     """Schema for corrupted row response."""
     id: int
-    table_name: str
+    target_table: str
     row_id: str
-    error_message: str
+    error_reason: Optional[str] = None
+    error_column: Optional[str] = None
+    raw_row: Optional[Dict[str, Any]] = None
+    corrected_row: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True
