@@ -10,17 +10,17 @@ router = APIRouter()
 @router.post("/api/files/upload")
 async def upload_file(
     file: UploadFile = File(...), 
-    fake_s3: FakeS3 = Depends(get_fake_s3),
+    presigned_generator: FakeS3 = Depends(get_fake_s3),
     db: Session = Depends(get_db)
 ):
     try:
         file_id = uuid.uuid4()
         object_key = f"uploads/{file_id}/{file.filename}"
-        FileUploads = Base.classes.get("file_registry")
-        if not FileUploads:
+        FileRegistry = Base.classes.get("file_registry")
+        if not FileRegistry:
             raise HTTPException(status_code=500, detail="Configuration error: 'file_registry' table not found.")
         
-        new_record = FileUploads(
+        new_record = FileRegistry(
             file_id=file_id,
             object_key=object_key,
             status="UPLOADED"
@@ -29,9 +29,9 @@ async def upload_file(
         db.commit()
 
 
-        presigned_url = fake_s3.generatePresignedURL()
+        presigned_url = presigned_generator.generatePresignedURL()
         file_content = await file.read()
-        stored = fake_s3.storeFile(presigned_url, file_content)
+        stored = presigned_generator.storeFile(presigned_url, file_content)
         if not stored:
             raise HTTPException(status_code=500, detail="Failed to store file.")
         return {"presigned_url": presigned_url, "file_id": str(file_id)}
