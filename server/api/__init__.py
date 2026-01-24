@@ -1,3 +1,3 @@
-from . import metadata, tables, metadata_filters, corrupted_rows
+from . import metadata, reflect, tables, rows, corrupted_rows
 
-__all__ = ["metadata", "tables", "metadata_filters", "corrupted_rows"]
+__all__ = ["metadata", "reflect", "tables", "rows", "corrupted_rows"]

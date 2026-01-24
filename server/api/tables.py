@@ -1,19 +1,59 @@
 from fastapi import APIRouter, HTTPException, Depends
 import crud
-from typing import Any, List
+from typing import Any
 from sqlalchemy.orm import Session
-from database import Base
-from deps import get_db, get_model_class
-from sqlalchemy import select, inspect
+from core.database import Base
+from core.deps import get_db, get_model_class
+from sqlalchemy import inspect
 
 router = APIRouter()
+
+# Tables to hide from the user-facing list
+HIDDEN_TABLES = ["alembic_version", "metadata_creation", "metadata_updates", "corrupted_rows"]
+
 @router.get("/api/tables")
 def get_all_tables():
     """
-    Get a list of all table names reflected from
-     the database.
+    Get a list of all table names reflected from the database,
+    excluding internal metadata tables.
     """
-    return {"tables": list(Base.classes.keys())}
+    all_tables = list(Base.classes.keys())
+    visible_tables = [t for t in all_tables if t not in HIDDEN_TABLES]
+    return {"tables": visible_tables}
+
+
+@router.get("/api/tables_with_metadata")
+def get_tables_with_metadata(db: Session = Depends(get_db)):
+    """
+    Get all tables with their metadata (uploaded by, date uploaded, date modified, size).
+    Excludes internal metadata tables.
+    Uses bulk fetching for performance.
+    """
+    all_tables = list(Base.classes.keys())
+    visible_tables = [t for t in all_tables if t not in HIDDEN_TABLES]
+    
+    creation_model = Base.classes.get("metadata_creation")
+    updates_model = Base.classes.get("metadata_updates")
+    
+    # Bulk fetch all metadata in one go
+    # This matches the function defined in crud.py
+    results = crud.get_tables_metadata(db, visible_tables, creation_model, updates_model)
+    
+    return {"tables": results}
+
+
+@router.get("/api/schema/{table_name}")
+def get_table_schema(
+    table_name: str,
+    model_class: Any = Depends(get_model_class)
+) -> dict:
+    """
+    Get the column names for a table (excluding 'id').
+    """
+    mapper = inspect(model_class)
+    columns = [c.key for c in mapper.column_attrs if c.key != "id"]
+    return {"columns": columns}
+
 
 @router.get("/api/get_size/{table_name}")
 def get_size(
@@ -21,115 +61,12 @@ def get_size(
     db: Session = Depends(get_db)
 ) -> dict:
     """
-    Get the size of a specific table (e.g. KB, MB, GB).
+    Get the size of a specific table.
     """
     try:
         size_info = crud.get_database_size(table_name, db)
+        if not size_info:
+            raise HTTPException(status_code=404, detail="Table not found")
         return size_info
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error getting size: {e}")
-
-
-@router.get("/api/{table_name}")
-def get_all_items(
-    model_class: Any = Depends(get_model_class), 
-    db: Session = Depends(get_db)
-) -> List[dict]:
-    """
-    Get all items from a specified table.
-    """
-    items = crud.get_all_items(db, model_class)
-    return [crud.model_to_dict(item) for item in items]
-
-@router.post("/api/table/{table_name}")
-def create_item(
-    item_data: dict, 
-    model_class: Any = Depends(get_model_class), 
-    db: Session = Depends(get_db)
-) -> dict:
-    """
-    Create a new item in a specified table.
-    Validation is based on the table's columns, not a Pydantic schema.
-    """
-    mapper = inspect(model_class)
-    valid_keys = {c.key for c in mapper.column_attrs}
-    
-    # --- Dynamic Validation ---
-    for key in item_data:
-        if key not in valid_keys:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Invalid field: '{key}'. Valid fields are: {list(valid_keys)}"
-            )
-            
-    try:
-        new_item = crud.create_item(db, model_class, item_data)
-        return crud.model_to_dict(new_item)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error creating item: {e}")
-
-
-@router.get("/api/{table_name}/{item_id}")
-def get_one_item(
-    item_id: int, 
-    model_class: Any = Depends(get_model_class), 
-    db: Session = Depends(get_db)
-) -> dict:
-    """
-    Get a single item by its ID from a specified table.
-    (Note: Assumes an integer primary key)
-    """
-    item = crud.get_one_item(db, model_class, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    return crud.model_to_dict(item)
-
-@router.put("/api/{table_name}/{item_id}")
-def update_item(
-    item_id: int,
-    item_data: dict, 
-    model_class: Any = Depends(get_model_class), 
-    db: Session = Depends(get_db)
-) -> dict:
-    """
-    Update an item in a specified table.
-    Validation is based on the table's columns.
-    """
-    item = crud.get_one_item(db, model_class, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-
-    mapper = inspect(model_class)
-    valid_keys = {c.key for c in mapper.column_attrs}
-    pk_keys = {c.key for c in mapper.primary_key}
-
-    for key, value in item_data.items():
-        if key not in valid_keys:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Invalid field: '{key}'. Valid fields are: {list(valid_keys)}"
-            )
-        if key in pk_keys:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Cannot update primary key field: '{key}'"
-            )
-        setattr(item, key, value)
-    
-    try:
-        new_item = crud.update_item(db, model_class, item_id, item)
-        return crud.model_to_dict(new_item)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error updating item: {e}")
-
-@router.delete("/api/{table_name}/{item_id}")
-def delete_item(
-    item_id: int, 
-    model_class: Any = Depends(get_model_class), 
-    db: Session = Depends(get_db)
-):
-    """
-    Delete an item by its ID from a specified table.
-    """
-    crud.delete_item(db, model_class, item_id)
-    return {"message": "Item deleted successfully"}

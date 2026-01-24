@@ -1,14 +1,14 @@
 // src/app/auth/login/route.ts
-import { createClient } from '../../../../src/utils/supabase/server';
+import { createClient } from '@/utils/supabase/server';
 import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   const { email, password } = await request.json();
-  
+
   try {
     const supabase = await createClient();
-    
-    const { data, error } = await supabase.auth.signInWithPassword({
+
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -18,8 +18,10 @@ export async function POST(request: Request) {
     }
 
     // Get the session
-    const { data: { session } } = await supabase.auth.getSession();
-    
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
     if (!session) {
       return NextResponse.json(
         { error: 'Authentication successful but no session was created' },
@@ -28,12 +30,12 @@ export async function POST(request: Request) {
     }
 
     // Return success response
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
       user: {
         id: session.user.id,
         email: session.user.email,
-      }
+      },
     });
   } catch (error) {
     console.error('Login error:', error);

@@ -1,87 +1,72 @@
-import React from "react";
-import { loginResult } from "@/utils/supabase/isloggedin";
+import React from 'react';
+import Link from 'next/link';
+import { loginResult } from '@/utils/checklogin';
 import { redirect } from 'next/navigation';
+import { ServiceFactory } from '@/services';
+import type { TableRow } from '@/types';
+import DataTable from './DataTable';
 
-type Props = {
-  params: { tablename: string };
+type PageProps = {
+  params: Promise<{ tablename: string }>;
 };
 
-export default async function DataViewPage({ params }: Props) {
-  const { tablename } = await params;
+export default async function DataViewPage(props: PageProps) {
+  const params = await props.params;
+  const { tablename } = params;
 
-  // check if logged in
-  const user = await loginResult(); 
-  if (!user){
-    redirect('/login'); 
+  const user = await loginResult();
+  if (!user) {
+    redirect('/login');
   }
 
-  let data: any;
+  const dataService = ServiceFactory.getDataService();
+
+  let data: TableRow[] = [];
+  let columns: string[] = [];
   let error: string | null = null;
 
   try {
-    data = await getTableData(tablename);
-  } catch (err: any) {
-    error = err?.message ?? String(err);
+    const [dataResponse, schemaResponse] = await Promise.all([
+      dataService.getTableData(tablename, { skip: 0, limit: 50 }),
+      dataService.getTableSchema(tablename).catch(() => null),
+    ]);
+
+    data = dataResponse?.data || [];
+    columns = schemaResponse?.columns || [];
+
+    if (columns.length === 0 && data.length > 0) {
+      columns = Object.keys(data[0]).filter((k) => k !== 'id');
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error) {
+      error = err.message;
+    } else {
+      error = 'Failed to load data';
+    }
   }
 
   if (error) {
     return (
-      <main style={{ padding: 24 }}>
-        <h1>Error loading table <code>{tablename}</code></h1>
-        <pre>{error}</pre>
-      </main>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-50 p-8">
+        <div className="max-w-7xl mx-auto bg-white rounded-2xl shadow-sm border border-red-200 p-8">
+          <h2 className="text-xl font-semibold text-red-600 mb-2">
+            Error loading table
+          </h2>
+          <pre className="text-sm text-slate-600 bg-slate-50 p-4 rounded-lg overflow-x-auto">
+            {error}
+          </pre>
+          <Link
+            href="/homescreen"
+            className="mt-4 inline-block text-blue-600 hover:underline"
+          >
+            Return to Dashboard
+          </Link>
+        </div>
+      </div>
     );
   }
 
-  // Avoid displaying or indexing into empty table
-  if (data.length == 0) {
-    return (
-      <h2> <b>No content!!!!!!!! </b></h2>
-    )
-  }
-
-  // remove the id field, avoid showing it in dataview.
-  const content = data.map(({ id, ...rest }) => rest);
-
-  const headers = Object.keys(content[0]);
-
-  const rows = content.map(key => Object.values(key));
-  console.log(`Rows: ${rows}`);
   return (
-    <div className="flex flex-col items-center min-h-screen bg-gray-50 p-8">
-      <h1 className="text-center text-3xl py-5">{tablename}</h1>
-      <table>
-        <thead>
-          <tr>
-            {headers.map(header => <th key={header} className="text-center px-10">{header}</th>)}
-          </tr>
-        </thead>
-        <tbody className="text-sm">
-          {rows.map((row: any, index: any) => (
-            <tr key={index}>
-              {row.map((cell: any, index: any) => <td key={index} className={`text-center ${cell ? "" : "text-gray-400 italic"}`}>{cell ? cell : "null"}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DataTable tablename={tablename} initialData={data} columns={columns} />
   );
-}
-
-
-// Pull data from the backend by the tableName
-async function getTableData(rawTableName: string): Promise<any> {
-  const backendUrl = process.env.BACKEND_URL ?? "http://localhost:8000";
-  const url = `${backendUrl.replace(/\/$/, "")}/api/${encodeURIComponent(rawTableName)}`;
-
-  const resp = await fetch(url, {
-    cache: "no-store",
-  });
-
-  if (!resp.ok) {
-    const bodyText = await resp.text().catch(() => "");
-    throw new Error(`Fetch failed (${resp.status} ${resp.statusText})${bodyText ? `: ${bodyText}` : ""}`);
-  }
-
-  return resp.json();
 }

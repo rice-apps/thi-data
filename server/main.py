@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from database import reflect_db
-from api import metadata, tables, metadata_filters
+from core.database import reflect_db
+from api import metadata, tables, rows, reflect, corrupted_rows
 
 origins = [
     "http://localhost:3000",
@@ -19,10 +19,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"], # Allows all methods
-    allow_headers=["*"], # Allows all headers
+    allow_methods=["*"], 
+    allow_headers=["*"], 
 )
-
 
 # --- API Endpoints ---
 
@@ -30,6 +29,11 @@ app.add_middleware(
 def read_root():
     return {"Hello": "World"}
 
-app.include_router(metadata_filters.router)
+# Include Routers
 app.include_router(metadata.router)
+app.include_router(reflect.router)
 app.include_router(tables.router)
+app.include_router(rows.router)
+app.include_router(corrupted_rows.router)
+
+    
