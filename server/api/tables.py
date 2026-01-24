@@ -6,10 +6,9 @@ from core.database import Base
 from core.deps import get_db, get_model_class
 from sqlalchemy import inspect
 
-router = APIRouter()
+from core.constants import HIDDEN_TABLES
 
-# Tables to hide from the user-facing list
-HIDDEN_TABLES = ["alembic_version", "metadata_creation", "metadata_updates"]
+router = APIRouter()
 
 @router.get("/api/tables")
 def get_all_tables():
