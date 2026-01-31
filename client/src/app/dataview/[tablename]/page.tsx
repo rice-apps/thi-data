@@ -26,19 +26,16 @@ export default async function DataViewPage(props: PageProps) {
   let error: string | null = null;
 
   try {
-    const dataResponse = await dataService.getTableData(tablename, {
-      skip: 0,
-      limit: 50,
-    });
-    data = dataResponse?.data || [];
+    const [dataResponse, schemaResponse] = await Promise.all([
+      dataService.getTableData(tablename, { skip: 0, limit: 50 }),
+      dataService.getTableSchema(tablename).catch(() => null),
+    ]);
 
-    try {
-      const schemaResponse = await dataService.getTableSchema(tablename);
-      columns = schemaResponse?.columns || [];
-    } catch {
-      if (data.length > 0) {
-        columns = Object.keys(data[0]).filter((k) => k !== 'id');
-      }
+    data = dataResponse?.data || [];
+    columns = schemaResponse?.columns || [];
+
+    if (columns.length === 0 && data.length > 0) {
+      columns = Object.keys(data[0]).filter((k) => k !== 'id');
     }
   } catch (err: unknown) {
     if (err instanceof Error) {

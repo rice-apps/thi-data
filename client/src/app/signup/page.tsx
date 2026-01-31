@@ -1,49 +1,16 @@
+// src/app/signup/page.tsx
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { getSupabase } from '@/utils/supabase/client';
+import { useActionState } from 'react';
+import { signUpAction } from '../auth/actions';
 
 export default function SignupPage() {
-  const router = useRouter();
-  const [form, setForm] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    password: '',
-  });
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
-
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const supabase = getSupabase();
-    const { error } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-      options: {
-        data: {
-          first_name: form.firstName,
-          last_name: form.lastName,
-        },
-      },
-    });
-    setLoading(false);
-
-    if (error) {
-      setError(error.message);
-    } else {
-      alert('Account created! Check your email for verification.');
-      router.push('/login');
-    }
-  };
+  const [state, formAction, isPending] = useActionState(
+    async (prevState: { error?: string } | null, formData: FormData) => {
+      return await signUpAction(formData);
+    },
+    null
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-50 flex items-center justify-center p-4">
@@ -61,7 +28,7 @@ export default function SignupPage() {
 
         {/* Signup Form */}
         <form
-          onSubmit={handleSignup}
+          action={formAction}
           className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-200 p-8 space-y-5"
         >
           <div className="grid grid-cols-2 gap-4">
@@ -73,8 +40,6 @@ export default function SignupPage() {
                 type="text"
                 name="firstName"
                 placeholder="John"
-                value={form.firstName}
-                onChange={handleChange}
                 required
                 className="w-full px-4 py-3 text-slate-700 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1c66bb]/30 focus:border-[#1c66bb] focus:bg-white transition-all duration-200"
               />
@@ -87,8 +52,6 @@ export default function SignupPage() {
                 type="text"
                 name="lastName"
                 placeholder="Doe"
-                value={form.lastName}
-                onChange={handleChange}
                 required
                 className="w-full px-4 py-3 text-slate-700 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1c66bb]/30 focus:border-[#1c66bb] focus:bg-white transition-all duration-200"
               />
@@ -103,8 +66,6 @@ export default function SignupPage() {
               type="email"
               name="email"
               placeholder="you@texashearing.org"
-              value={form.email}
-              onChange={handleChange}
               required
               className="w-full px-4 py-3 text-slate-700 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1c66bb]/30 focus:border-[#1c66bb] focus:bg-white transition-all duration-200"
             />
@@ -118,25 +79,23 @@ export default function SignupPage() {
               type="password"
               name="password"
               placeholder="••••••••"
-              value={form.password}
-              onChange={handleChange}
               required
               className="w-full px-4 py-3 text-slate-700 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1c66bb]/30 focus:border-[#1c66bb] focus:bg-white transition-all duration-200"
             />
           </div>
 
-          {error && (
+          {state?.error && (
             <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-xl border border-red-200">
-              {error}
+              {state.error}
             </div>
           )}
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={isPending}
             className="w-full py-3 px-4 bg-gradient-to-r from-[#1c66bb] to-[#0d4a8f] text-white font-medium rounded-xl hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? (
+            {isPending ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
                 Creating account...
