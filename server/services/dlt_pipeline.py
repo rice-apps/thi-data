@@ -15,6 +15,7 @@ def load_to_postgres(con):
     
     # Stream clean data to data warehouse
     arrow_table = con.table(f"{CLEAN_DATA_NAME}").arrow()
+    corrupted_table = con.table(f"{CORRUPTED_ROWS_NAME}").arrow()
 
     info = pipeline.run(
         arrow_table, 
@@ -22,4 +23,10 @@ def load_to_postgres(con):
         write_disposition="append"
     )
 
-    return info
+    corrupted = pipeline.run(
+        corrupted_table,
+        table_name="corrupted_rows",
+        write_disposition="append"
+    )
+
+    return info, corrupted
