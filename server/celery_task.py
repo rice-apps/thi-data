@@ -6,7 +6,7 @@ from typing import Literal
 app = Celery('tasks', broker='pyamqp://guest@localhost//')
 
 # TODO: To be filled in when file registry/S3 exists
-def download_file_from_s3(bucket: str, key: str, destination: str) -> Literal["SUCCESS", "FAILURE"]:
+def download_file_from_s3(bucket: str, key: str) -> Literal["SUCCESS", "FAILURE"]:
     pass
 def get_object_key(file_id: str) -> Literal["SUCCESS", "FAILURE"]:
     try:
@@ -28,10 +28,8 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
     """
     update_status(file_id, "PROCESSING")
     object_key = get_object_key(file_id)
-    file_path = f"/tmp/{file_id}_{object_key}"
 
-
-    status = download_file_from_s3(bucket="my-bucket", key=object_key, destination=file_path)
+    status = download_file_from_s3(bucket="my-bucket", key=object_key)
     update_status(file_id, status)
     
     return process_file_task(file_path, proposed_schema)
