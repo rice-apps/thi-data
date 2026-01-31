@@ -1,11 +1,9 @@
 from frictionless import extract, describe
 
-def infer_from_file(object_key: str): 
-    # hardcoded, need to change!!
-    file_path = "tests/test_validation_data/patient_data.csv" 
+def infer_from_file(file_path: str): 
     rows = extract(file_path)
     resource = describe(file_path)
     return {
-        "schema": resource.schema, 
-        "sample": rows, 
+        "schema": resource.schema.to_dict(), 
+        "sample": rows 
     }

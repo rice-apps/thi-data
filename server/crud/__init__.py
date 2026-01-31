@@ -4,4 +4,4 @@ from .generic import (
     create_item, delete_item, update_item, get_items_by_field, get_items_by_date_range
 )
 from .metadata import get_database_size, get_tables_metadata
-from .validation import sample_file
+from .validation import infer_from_file 
