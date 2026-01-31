@@ -146,11 +146,6 @@ export default function DataUploadPage() {
   return (
     <div className="min-h-screen bg-white flex items-center justify-center p-6">
       <main className="w-full max-w-3xl">
-        {/* Navigation/Header */}
-        <div className="flex justify-end mb-4 gap-4">
-            <button onClick={() => router.push('/homescreen')} className="text-sm text-slate-500 hover:text-slate-700">Back</button>
-            <button onClick={handleSignOut} className="text-sm text-red-500 hover:text-red-700">Sign Out</button>
-        </div>
 
         <div className="bg-white rounded-lg p-2">
           
@@ -265,7 +260,7 @@ export default function DataUploadPage() {
           {/* 3. ACTION BUTTONS */}
           <div className="flex justify-end gap-4 mt-12">
             <button
-              onClick={resetUpload}
+              onClick={() => router.push('/')}
               className="px-10 py-2.5 bg-white border border-slate-500 rounded text-slate-800 font-medium hover:bg-slate-50 transition-colors"
             >
               Cancel
