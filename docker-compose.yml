@@ -24,7 +24,19 @@ services:
     depends_on:
       - rabbitmq
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-
+  
+  celery_worker:
+    build: 
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: thi-celery-worker
+    volumes:
+      - ./server:/app
+    environment:
+      - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      - rabbitmq
+    command: celery -A celery_task.app worker --loglevel=info
 
 volumes:
   rabbitmq-lib:
