@@ -128,11 +128,6 @@ export default function DataUploadPage() {
     }
   };
 
-  const handleSignOut = async () => {
-    await authService.signOut();
-    router.push('/login');
-  };
-
   const resetUpload = () => {
     setFile(null);
     setUploadStatus('idle');
