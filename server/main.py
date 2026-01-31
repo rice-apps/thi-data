@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from core.database import reflect_db
 from core.deps import init_storage_provider
 from FakeS3.fakeS3 import FakeS3
-from api import metadata, tables, rows, upload
+from api import metadata, tables, rows, reflect, corrupted_rows, upload
 
 origins = [
     "http://localhost:3000",
@@ -33,11 +33,11 @@ def read_root():
     return {"Hello": "World"}
 
 # Include Routers
+app.include_router(corrupted_rows.router)
 app.include_router(metadata.router)
+app.include_router(reflect.router)
 app.include_router(tables.router)
 app.include_router(rows.router)
 app.include_router(upload.router)
-
-
 
     
