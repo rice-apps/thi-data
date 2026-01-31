@@ -1,8 +1,8 @@
-from typing import Generator, Any
+from typing import Generator, Any, Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from .database import SessionLocal, Base
-from FakeS3.fakeS3 import FakeS3
+from .storage import StorageProvider
 
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
@@ -17,9 +17,14 @@ def get_model_class(table_name: str) -> Any:
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found.")
     return model_class
 
-#Creates a FakeS3 instance
-_fake_s3_instance = FakeS3()
+_storage_instance: Optional[StorageProvider] = None
 
-def get_fake_s3() -> FakeS3:
-    return _fake_s3_instance
+def init_storage_provider(provider: StorageProvider) -> None:
+    global _storage_instance
+    _storage_instance = provider
+
+def get_storage_provider() -> StorageProvider:
+    if _storage_instance is None:
+        raise RuntimeError("Storage provider not initialized. Call init_storage_provider() first.")
+    return _storage_instance
 

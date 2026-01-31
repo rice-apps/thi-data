@@ -1,5 +1,8 @@
 import random
-class FakeS3:
+from core.storage import StorageProvider
+
+
+class FakeS3(StorageProvider):
 
     def __init__ (self):
         self.validURLs = set()

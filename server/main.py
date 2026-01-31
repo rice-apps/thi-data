@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from core.database import reflect_db
+from core.deps import init_storage_provider
+from FakeS3.fakeS3 import FakeS3
 from api import metadata, tables, rows, upload
 
 origins = [
@@ -11,6 +13,7 @@ origins = [
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     reflect_db()
+    init_storage_provider(FakeS3())
     yield
 
 app = FastAPI(lifespan=lifespan)

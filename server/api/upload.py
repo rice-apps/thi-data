@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
-from core.deps import get_fake_s3, get_db
+from core.deps import get_storage_provider, get_db
 from core.database import Base
-from FakeS3.fakeS3 import FakeS3
+from core.storage import StorageProvider
 from sqlalchemy.orm import Session
 import uuid
 
@@ -9,8 +9,8 @@ router = APIRouter()
 
 @router.post("/api/files/upload")
 async def upload_file(
-    file: UploadFile = File(...), 
-    presigned_generator: FakeS3 = Depends(get_fake_s3),
+    file: UploadFile = File(...),
+    presigned_generator: StorageProvider = Depends(get_storage_provider),
     db: Session = Depends(get_db)
 ):
     try:
