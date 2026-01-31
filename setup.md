@@ -5,6 +5,7 @@ Before you begin, ensure you have the following installed on your system:
 * **npm** (comes with Node.js)
 * **Python** (v3.8 or later)
 * **pip** (Python package installer)
+* **Docker Desktop** 
 
 ---
 
@@ -99,3 +100,25 @@ You must run both the backend and frontend servers simultaneously in separate te
 3.  Open your browser and go to `http://localhost:3000` to see the application.
 
 The frontend will fetch data from the backend running on port 8000 and display it.
+
+
+
+---
+
+### 4. RabbitMQ Setup 
+
+RabbitMQ is used for asynchronous task processing with Celery.
+
+1.  **Start RabbitMQ with Docker Compose:**
+    ```bash
+    docker-compose up -d
+    ```
+
+2.  **Verify it's running:**
+    * Go to http://localhost:15672 (login: `guest`/`guest`)
+
+3.  **Managing RabbitMQ:**
+    ```bash
+    docker-compose down     # Stop
+    docker-compose up -d    # Restart
+    ```

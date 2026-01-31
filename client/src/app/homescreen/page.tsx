@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useServices } from '@/services';
 import type { TableMetadata } from '@/types';
+import { signOutAction } from '../auth/actions';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { authService, dataService } = useServices();
+  const { dataService } = useServices();
   const [tables, setTables] = useState<TableMetadata[]>([]);
   const [search, setSearch] = useState('');
   const [hoveredTable, setHoveredTable] = useState<string | null>(null);
@@ -29,8 +30,7 @@ export default function HomeScreen() {
   );
 
   const handleSignOut = async () => {
-    await authService.signOut();
-    router.push('/login');
+    await signOutAction();
   };
 
   const formatValue = (value: string | null, fallback: string = '—') => {
