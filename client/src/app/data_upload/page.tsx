@@ -47,8 +47,9 @@ export default function DataUploadPage() {
   const validateAndSetFile = (selectedFile: File) => {
     const allowedTypes = [
       'text/csv',
-      'application/vnd.ms-excel'
+      'application/vnd.ms-excel',
     ];
+
     const allowedExtensions = ['.csv', '.xlsx'];
 
     const fileExtension = selectedFile.name
@@ -59,7 +60,7 @@ export default function DataUploadPage() {
       !allowedTypes.includes(selectedFile.type) &&
       !allowedExtensions.includes(fileExtension)
     ) {
-      setErrorMessage('Please upload a CSV or Excel file (.csv, .xlsx)');
+      setErrorMessage('Please upload a valid file (.csv, .xlsx)');
       setUploadStatus('error');
       return;
     }
@@ -142,247 +143,142 @@ export default function DataUploadPage() {
     }
   };
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-50">
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1c66bb] to-[#0d4a8f] flex items-center justify-center">
-              <span className="text-white font-bold text-lg">T</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold text-slate-800">
-                Texas Hearing Institute
-              </h1>
-              <p className="text-xs text-slate-500">Data Warehouse</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push('/homescreen')}
-              className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 border border-slate-200 rounded-lg hover:bg-slate-200 transition-all duration-200"
-            >
-              Back to Tables
-            </button>
-            <button
-              onClick={handleSignOut}
-              className="px-4 py-2 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 hover:border-red-300 transition-all duration-200"
-            >
-              Sign Out
-            </button>
-          </div>
+    <div className="min-h-screen bg-white flex items-center justify-center p-6">
+      <main className="w-full max-w-3xl">
+        {/* Navigation/Header */}
+        <div className="flex justify-end mb-4 gap-4">
+            <button onClick={() => router.push('/homescreen')} className="text-sm text-slate-500 hover:text-slate-700">Back</button>
+            <button onClick={handleSignOut} className="text-sm text-red-500 hover:text-red-700">Sign Out</button>
         </div>
-      </header>
 
-      <main className="max-w-3xl mx-auto px-6 py-12">
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          {/* Page Title */}
-          <div className="px-8 py-6 border-b border-slate-200">
-            <h2 className="text-2xl font-semibold text-slate-800">
-              Upload Data
-            </h2>
-            <p className="text-slate-500 mt-1">
-              Upload a CSV or Excel file to create a new data table
-            </p>
+        <div className="bg-white rounded-lg p-2">
+          
+          {/* 1. DROP ZONE AREA */}
+          <div
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+            className={`
+              relative flex flex-col items-center justify-center h-64
+              border-[3px] border-slate-500
+              bg-[#E3F2FD] 
+              transition-colors duration-200
+              ${dragActive ? 'border-blue-500 bg-blue-100' : ''}
+            `}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.xlsx"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+
+            {/* Upload Icon */}
+            <div className="mb-4">
+              <svg 
+                width="40" 
+                height="40" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="1.5" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                className="text-slate-800"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            </div>
+
+            <p className="text-lg text-slate-900 mb-1">Drag and drop</p>
+            <p className="text-lg text-slate-900 mb-4">or</p>
+
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="bg-[#CFCFCF] hover:bg-gray-300 text-slate-800 border border-slate-500 px-10 py-2 rounded shadow-sm text-lg font-normal transition-colors"
+            >
+              Choose file
+            </button>
           </div>
 
-          <div className="px-8 py-8 space-y-8">
-            {/* File Drop Zone */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-3">
-                Select File
-              </label>
-              <div
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200 ${
-                  dragActive
-                    ? 'border-[#1c66bb] bg-blue-50'
-                    : file
-                      ? 'border-green-300 bg-green-50'
-                      : 'border-slate-300 hover:border-[#1c66bb] hover:bg-slate-50'
-                }`}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv,.xlsx"
-                  onChange={handleFileChange}
-                  className="hidden"
+          {/* 2. UPLOADED FILE SECTION (Updated Style) */}
+          {file && (
+            <div className="mt-8">
+              <h3 className="text-lg font-medium text-slate-900 mb-2">Uploaded File</h3>
+              {/* Green background, Green border */}
+              <div className="flex items-center justify-between border-[2px] border-[#68B96A] rounded p-3 bg-[#F1F8E9]">
+                
+                {/* Checkmark Icon in Circle */}
+                <div className="text-[#68B96A]">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <circle cx="12" cy="12" r="10" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.5 12.5L10.5 14.5L15.5 9.5" />
+                  </svg>
+                </div>
+
+                {/* Filename */}
+                <span className="flex-1 px-4 text-slate-900 font-semibold text-lg truncate">
+                  {file.name}
+                </span>
+
+                {/* Trash/Remove Icon */}
+                <button 
+                  onClick={resetUpload}
+                  className="text-slate-700 hover:text-red-600 transition-colors"
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    <line x1="10" y1="11" x2="10" y2="17" />
+                    <line x1="14" y1="11" x2="14" y2="17" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Status Messages */}
+          {uploadStatus === 'error' && errorMessage && (
+            <div className="mt-4 text-red-600 text-sm font-medium">
+              {errorMessage}
+            </div>
+          )}
+          {uploadStatus === 'uploading' && (
+             <div className="mt-4 w-full bg-slate-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                  style={{ width: `${uploadProgress}%` }}
                 />
+             </div>
+          )}
+          {uploadStatus === 'success' && (
+             <div className="mt-4 text-green-600 text-sm font-medium">
+               Upload Complete!
+             </div>
+          )}
 
-                {file ? (
-                  <div className="space-y-2">
-                    <div className="w-12 h-12 mx-auto rounded-xl bg-green-100 flex items-center justify-center">
-                      <svg
-                        className="w-6 h-6 text-green-600"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                    </div>
-                    <p className="text-slate-800 font-medium">{file.name}</p>
-                    <p className="text-slate-500 text-sm">
-                      {formatFileSize(file.size)}
-                    </p>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        resetUpload();
-                      }}
-                      className="text-sm text-red-600 hover:text-red-700 font-medium"
-                    >
-                      Remove file
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="w-12 h-12 mx-auto rounded-xl bg-slate-100 flex items-center justify-center">
-                      <svg
-                        className="w-6 h-6 text-slate-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                        />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-slate-700 font-medium">
-                        Drop your file here, or{' '}
-                        <span className="text-[#1c66bb]">browse</span>
-                      </p>
-                      <p className="text-slate-500 text-sm mt-1">
-                        Supports CSV and XLSX files
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Error Message */}
-            {uploadStatus === 'error' && errorMessage && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
-                <svg
-                  className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                <p className="text-red-600 text-sm">{errorMessage}</p>
-              </div>
-            )}
-
-            {/* Success Message */}
-            {uploadStatus === 'success' && (
-              <div className="p-4 bg-green-50 border border-green-200 rounded-xl flex items-start gap-3">
-                <svg
-                  className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                <p className="text-green-600 font-medium">Upload successful!</p>
-              </div>
-            )}
-
-            {/* Upload Progress */}
-            {uploadStatus === 'uploading' && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600">Uploading...</span>
-                  <span className="text-slate-600 font-medium">
-                    {uploadProgress}%
-                  </span>
-                </div>
-                <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-[#1c66bb] to-[#0d4a8f] transition-all duration-300"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Upload Button */}
-            <div className="flex justify-end gap-3 pt-4">
-              <button
-                onClick={resetUpload}
-                disabled={uploadStatus === 'uploading'}
-                className="px-6 py-3 text-slate-600 font-medium bg-slate-100 border border-slate-200 rounded-xl hover:bg-slate-200 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Reset
-              </button>
-              <button
-                onClick={handleUpload}
-                disabled={!file || uploadStatus === 'uploading'}
-                className="px-6 py-3 bg-gradient-to-r from-[#1c66bb] to-[#0d4a8f] text-white font-medium rounded-xl hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {uploadStatus === 'uploading' ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Uploading...
-                  </>
-                ) : (
-                  <>
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-                      />
-                    </svg>
-                    Upload File
-                  </>
-                )}
-              </button>
-            </div>
+          {/* 3. ACTION BUTTONS */}
+          <div className="flex justify-end gap-4 mt-12">
+            <button
+              onClick={resetUpload}
+              className="px-10 py-2.5 bg-white border border-slate-500 rounded text-slate-800 font-medium hover:bg-slate-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUpload}
+              disabled={!file || uploadStatus === 'uploading'}
+              className="px-8 py-2.5 bg-[#CFE8F8] border border-slate-500 rounded text-slate-900 font-medium hover:bg-[#badcf5] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {uploadStatus === 'uploading' ? 'Uploading...' : 'Verify Columns'}
+            </button>
           </div>
+
         </div>
       </main>
     </div>
