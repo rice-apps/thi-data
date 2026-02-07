@@ -51,7 +51,7 @@ def log_metadata_update(db: Session, table_name: str, user_name: str = "system")
             updated_at=datetime.now()
         )
         db.add(new_update)
-        db.commit() # Commit the log
+        db.flush() # Flush instead of commit
 
     except Exception as e:
         logging.error(f"Failed to log metadata update: {e}")

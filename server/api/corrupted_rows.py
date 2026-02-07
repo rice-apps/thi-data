@@ -47,12 +47,9 @@ def create_corrupted_row(
     db: Session = Depends(get_db)
 ):
     """Create a new corrupted row entry."""
-    try: 
-        data = row.model_dump()
-        new_item = crud.create_item(db, model_class, data)
-        return crud.model_to_dict(new_item)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error creating corrupted row: {e}")
+    data = row.model_dump()
+    new_item = crud.create_item(db, model_class, data)
+    return crud.model_to_dict(new_item)
 
 
 @router.get("/api/corrupted_rows", response_model=Dict[str, Any])
@@ -82,12 +79,7 @@ def delete_corrupted_row(
     db: Session = Depends(get_db)
 ):
     """Delete a corrupted row entry by ID."""
-    try:
-        success = crud.delete_item(db, model_class, row_id)
-        if not success:
-            raise HTTPException(status_code=404, detail="Corrupted row not found")
-        return {"message": "Corrupted row deleted successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error deleting corrupted row: {e}")
+    success = crud.delete_item(db, model_class, row_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Corrupted row not found")
+    return {"message": "Corrupted row deleted successfully"}

@@ -26,7 +26,6 @@ def validate_schema(file_id: str, db: Session = Depends(get_db), storage_service
              raise HTTPException(status_code=404, detail="File object not found in storage")
 
         result = crud.infer_from_file(str(file_path))
-        db.commit()
         return result 
 
     except HTTPException:

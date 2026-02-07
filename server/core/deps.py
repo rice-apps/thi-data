@@ -6,9 +6,19 @@ from .storage import StorageProvider
 from .constants import HIDDEN_TABLES
 
 def get_db() -> Generator[Session, None, None]:
+    """
+    Provides a transactional database session.
+    
+    - Auto-commits on successful request completion.
+    - Auto-rollbacks on any unhandled exception.
+    """
     db = SessionLocal()
     try:
         yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

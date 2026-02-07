@@ -46,8 +46,8 @@ async def upload_file(
 
         crud.create_item(
             db=db,
-            model_class=db.Base.classes.file_registry,
-            data={
+            model_class=Base.classes.file_registry,
+            item_data={
                 "file_id": file_id,
                 "object_key": object_key,
                 "status": "UPLOADED",
@@ -82,8 +82,8 @@ def delete_file(
 ):
     file_records = crud.get_items_by_field(
         db=db,
-        model_class=db.Base.classes.file_registry,
-        field="file_id",
+        model_class=Base.classes.file_registry,
+        field_name="file_id",
         value=file_id,
     )
 
@@ -99,8 +99,8 @@ def delete_file(
 
     crud.delete_item_by_field(
         db=db,
-        model_class=db.Base.classes.file_registry,
-        field="file_id",
+        model_class=Base.classes.file_registry,
+        field_name="file_id",
         value=file_id,
     )
 
@@ -118,8 +118,8 @@ def update_file_registry(
 
     updated = crud.update_item_by_field(
         db=db,
-        model_class=db.Base.classes.file_registry,
-        field="file_id",
+        model_class=Base.classes.file_registry,
+        field_name="file_id",
         value=file_id,
         update_data=update_data,
     )

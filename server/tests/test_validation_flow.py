@@ -23,7 +23,7 @@ OBJECT_KEY = "patient_data.csv"
 
 def test_validate_schema_flow():
     reflect_db()
-    init_storage_provider(FakeS3())
+    init_storage_provider(FakeS3(test_files_dir="server/tests/test_validation_data"))
     model_class = Base.classes.get(TABLE)
     
     if not model_class:
@@ -37,6 +37,7 @@ def test_validate_schema_flow():
         "object_key": OBJECT_KEY, 
         "status": "PENDING"
     })
+    db.commit()
 
     response = client.post(f"/api/validate_schema?file_id={test_file_id}")
     
