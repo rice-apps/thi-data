@@ -6,45 +6,64 @@ import uuid
 from sqlalchemy.orm import Session
 
 from core.supabase import supabase
-from core.deps import get_db
+from core.deps import get_db, get_storage_provider
 import crud
+from core.storage import StorageProvider
+from core.database import Base
 
 router = APIRouter(prefix="/files", tags=["files"])
+
+class FileUpdate(BaseModel):
+    status: Optional[str] = None
+    object_key: Optional[str] = None
+    file_schema: Optional[dict] = None
+
 @router.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    storage_provider: StorageProvider = Depends(get_storage_provider)
 ):
     file_id = str(uuid.uuid4())
     object_key = f"uploads/{file_id}-{file.filename}"
 
-    content = await file.read()
+    try:
+        content = await file.read()
 
-    res = supabase.storage.from_("files").upload(
-        object_key,
-        content,
-        {"content-type": file.content_type},
-    )
+        res = supabase.storage.from_("files").upload(
+            object_key,
+            content,
+            {"content-type": file.content_type},
+        )
 
-    if res.get("error"):
-        raise HTTPException(status_code=500, detail=res["error"]["message"])
+        if res.get("error"):
+            presigned_url = storage_provider.generatePresignedURL()
+            stored = storage_provider.storeFile(presigned_url, content)
+            if not stored:
+                raise HTTPException(status_code=500, detail="Failed to store file")
+        else:
+            presigned_url = None
 
-    # Insert metadata into file_registry
-    crud.create_item(
-        db=db,
-        model_class=db.Base.classes.file_registry,
-        data={
+        crud.create_item(
+            db=db,
+            model_class=db.Base.classes.file_registry,
+            data={
+                "file_id": file_id,
+                "object_key": object_key,
+                "status": "UPLOADED",
+            },
+        )
+
+        return {
             "file_id": file_id,
             "object_key": object_key,
             "status": "UPLOADED",
-        },
-    )
+            "presigned_url": presigned_url
+        }
 
-    return {
-        "file_id": file_id,
-        "object_key": object_key,
-        "status": "UPLOADED",
-    }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"File upload failed: {e}")
+
 @router.get("/")
 def list_files():
     res = (
@@ -54,7 +73,6 @@ def list_files():
         .eq("bucket_id", "files")
         .execute()
     )
-
     return res.data
 
 @router.delete("/")
@@ -62,7 +80,6 @@ def delete_file(
     file_id: str,
     db: Session = Depends(get_db),
 ):
-    # Look up file in registry
     file_records = crud.get_items_by_field(
         db=db,
         model_class=db.Base.classes.file_registry,
@@ -76,13 +93,10 @@ def delete_file(
     record = file_records[0]
     object_key = record.object_key
 
-    # Delete from Supabase storage
     res = supabase.storage.from_("files").remove([object_key])
-
     if res.get("error"):
         raise HTTPException(status_code=500, detail=res["error"]["message"])
 
-    # Delete from file_registry
     crud.delete_item_by_field(
         db=db,
         model_class=db.Base.classes.file_registry,
@@ -90,15 +104,7 @@ def delete_file(
         value=file_id,
     )
 
-    return {
-        "file_id": file_id,
-        "status": "deleted",
-    }
-
-class FileUpdate(BaseModel):
-    status: Optional[str] = None
-    object_key: Optional[str] = None
-    file_schema: Optional[dict] = None
+    return {"file_id": file_id, "status": "deleted"}
 
 @router.patch("/{file_id}")
 def update_file_registry(
@@ -107,7 +113,6 @@ def update_file_registry(
     db: Session = Depends(get_db),
 ):
     update_data = update.dict(exclude_unset=True)
-
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields provided to update")
 
@@ -118,11 +123,7 @@ def update_file_registry(
         value=file_id,
         update_data=update_data,
     )
-
     if not updated:
         raise HTTPException(status_code=404, detail="File not found")
 
-    return {
-        "file_id": file_id,
-        "updated_fields": update_data,
-    }
+    return {"file_id": file_id, "updated_fields": update_data}
