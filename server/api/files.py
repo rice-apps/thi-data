@@ -5,7 +5,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from core.supabase import supabase
+from core.supabase import get_supabase_client
 from core.deps import get_db, get_storage_provider
 import crud
 from core.storage import StorageProvider
@@ -30,7 +30,7 @@ async def upload_file(
     try:
         content = await file.read()
 
-        res = supabase.storage.from_("files").upload(
+        res = get_supabase_client().storage.from_("files").upload(
             object_key,
             content,
             {"content-type": file.content_type},
@@ -67,7 +67,7 @@ async def upload_file(
 @router.get("/")
 def list_files():
     res = (
-        supabase
+        get_supabase_client()
         .table("storage.objects")
         .select("id, name, bucket_id, created_at, metadata")
         .eq("bucket_id", "files")
@@ -93,7 +93,7 @@ def delete_file(
     record = file_records[0]
     object_key = record.object_key
 
-    res = supabase.storage.from_("files").remove([object_key])
+    res = get_supabase_client().storage.from_("files").remove([object_key])
     if res.get("error"):
         raise HTTPException(status_code=500, detail=res["error"]["message"])
 
