@@ -1,15 +1,14 @@
-from frictionless import describe 
 from fastapi import APIRouter, HTTPException, Depends
 import crud
-from core.deps import get_db
+from core.deps import get_db, get_storage_provider
 from core.database import Base
+from core.storage import StorageProvider
 from sqlalchemy.orm import Session
-from services.mock_s3_service import MockS3Service
 
 router = APIRouter()
 
 @router.post("/api/validate_schema")
-def validate_schema(file_id: str, db: Session = Depends(get_db)):
+def validate_schema(file_id: str, db: Session = Depends(get_db), storage_service: StorageProvider = Depends(get_storage_provider)):
     try:
         file_record = crud.get_items_by_field(db = db,
                                               model_class=Base.classes.get("file_registry"),
@@ -21,19 +20,19 @@ def validate_schema(file_id: str, db: Session = Depends(get_db)):
         record = file_record[0]
         object_key = record.object_key
 
-        storage_service = MockS3Service()
         file_path = storage_service.get_file_path(object_key)
 
         if not file_path:
              raise HTTPException(status_code=404, detail="File object not found in storage")
 
         result = crud.infer_from_file(str(file_path))
-        record.file_schema = result["schema"]
         db.commit()
-        db.refresh(record)
         return result 
 
-    except HTTPException as e:
+    except HTTPException:
+        raise
+
+    except Exception as e:
         try:
             rows = crud.get_items_by_field(db, Base.classes.get("file_registry"), "file_id", file_id)
             if rows:
@@ -41,8 +40,5 @@ def validate_schema(file_id: str, db: Session = Depends(get_db)):
                 rec.status = "FRICTIONLESS_FAILED"
                 crud.update_item(db, Base.classes.get("file_registry"), rec.id, rec)
         except Exception:
-            pass 
-        raise e
-         
-    except Exception as e:
+            pass
         raise HTTPException(status_code = 500, detail=f"Schema inference failed: {e}")

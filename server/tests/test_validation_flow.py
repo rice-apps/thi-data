@@ -1,4 +1,3 @@
-import requests
 import os
 import sys
 import pytest
@@ -8,22 +7,23 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
 
-from core.deps import get_db
+from core.deps import get_db, init_storage_provider
 from core.database import Base, reflect_db
 import crud
 from main import app
 from api import validation
 from fastapi.testclient import TestClient
+from FakeS3.fakeS3 import FakeS3
 
 app.include_router(validation.router) 
 client = TestClient(app)
 
 TABLE = "file_registry"
 OBJECT_KEY = "patient_data.csv"
-API_URL = "http://localhost:8000"
 
 def test_validate_schema_flow():
     reflect_db()
+    init_storage_provider(FakeS3())
     model_class = Base.classes.get(TABLE)
     
     if not model_class:
@@ -47,10 +47,19 @@ def test_validate_schema_flow():
     print(f"Inferred Schema: {data['schema']['fields']}")
 
     db.expire_all() # Refresh
-    updated_record = crud.get_items_by_field(db, model_class, "file_id", test_file_id)[0]
-    # assert updated_record.file_schema is not None
-    # assert updated_record.file_schema == data["schema"]
+    fields = data["schema"]["fields"]
+    field_map = {f["name"]: f["type"] for f in fields}
+    assert field_map["PatientID"] == "string"
+    assert field_map["FirstName"] == "string"
+    assert field_map["LastName"] == "string"
+    assert field_map["Age"] == "integer"
+    assert field_map["Gender"] == "string"
+    assert field_map["BloodType"] == "string"
+    assert field_map["LastCheckup"] == "date"
+    assert field_map["Condition"] == "string"
 
+    # Cleanup test data
+    # crud.delete_item(db, model_class, new_record.id)
     db.close()
 
 if __name__ == "__main__":

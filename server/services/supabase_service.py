@@ -1,10 +1,12 @@
 from supabase import create_client
-import os
+from core.config import storage_settings
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+_client = None
 
-if not SUPABASE_URL or not SUPABASE_KEY:
- raise RuntimeError("Supabase credentials are not set.")
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+def get_supabase_client():
+    global _client
+    if _client is None:
+        if not storage_settings.STORAGE_URL or not storage_settings.STORAGE_KEY:
+            raise RuntimeError("Storage credentials are not set.")
+        _client = create_client(storage_settings.STORAGE_URL, storage_settings.STORAGE_KEY)
+    return _client

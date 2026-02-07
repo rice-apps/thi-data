@@ -13,8 +13,11 @@ class Settings(BaseModel):
     
     @property
     def DATABASE_URL(self) -> str:
-        db_url = f"postgresql+psycopg://{self.USER}:{self.PASSWORD}@{self.HOST}:{self.PORT}/{self.DBNAME}?sslmode=require"
-        print(f"DB_URL = {db_url}")
-        return db_url
+        return f"postgresql+psycopg://{self.USER}:{self.PASSWORD}@{self.HOST}:{self.PORT}/{self.DBNAME}?sslmode=require"
+
+class StorageSettings(BaseModel):
+    STORAGE_URL: str = os.getenv("STORAGE_URL", "")
+    STORAGE_KEY: str = os.getenv("STORAGE_KEY", "")
 
 settings = Settings()
+storage_settings = StorageSettings()
