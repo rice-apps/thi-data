@@ -1,6 +1,6 @@
 import duckdb
 import os
-from services.dlt_pipeline import load_to_postgres
+from services.dlt_pipeline import load_to_postgres3
 from services.dlt_pipeline import CORRUPTED_ROWS_NAME, RAW_DATA_NAME, CLEAN_DATA_NAME
 
 def process_file_task(file_path: str, proposed_schema: dict):
@@ -38,7 +38,7 @@ def validate_and_split_data(con, schema_map):
     
     con.execute(f"""
         CREATE TABLE {CORRUPTED_ROWS_NAME} AS 
-        SELECT rowid AS original_id, *, 'Validation Failed' as error_reason
+        SELECT rowid AS original_csv_row_id, *, 'Validation Failed' as error_reason
         FROM {RAW_DATA_NAME}
         WHERE {where_clause}
     """)
@@ -47,9 +47,8 @@ def validate_and_split_data(con, schema_map):
     
     con.execute(f"""
         CREATE TABLE {CLEAN_DATA_NAME} AS
-        SELECT {select_clause}
+        SELECT rowid AS original_csv_row_id, {select_clause}
         FROM {RAW_DATA_NAME}
-        WHERE rowid NOT IN (SELECT original_id FROM {CORRUPTED_ROWS_NAME})
     """)
     
     error_count = con.execute(f"SELECT COUNT(*) FROM {CORRUPTED_ROWS_NAME}").fetchone()[0]

@@ -20,13 +20,15 @@ def load_to_postgres(con):
     info = pipeline.run(
         arrow_table, 
         table_name="final_patient_records",
-        write_disposition="append"
+        write_disposition="merge", 
+        primary_key="original_csv_row_id"
     )
 
     corrupted = pipeline.run(
         corrupted_table,
         table_name="corrupted_rows",
-        write_disposition="append"
+        write_disposition="merge", 
+        primary_key="original_csv_row_id"
     )
 
     return info, corrupted

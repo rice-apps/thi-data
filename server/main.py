@@ -39,5 +39,3 @@ app.include_router(reflect.router)
 app.include_router(tables.router)
 app.include_router(rows.router)
 app.include_router(upload.router)
-
-    
