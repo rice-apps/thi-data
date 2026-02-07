@@ -10,8 +10,10 @@ class Settings(BaseModel):
     HOST: str = os.getenv("host", "db")
     PORT: str = os.getenv("port", "5432")
     DBNAME: str = os.getenv("dbname", "postgres")
-    BROKER_URL: str = os.getenv("broker_url", "amqp://guest:guest@rabbitmq:5672//")
-    ORIGIN_URL: str = os.getenv("origin_url", "http://localhost:3000")
+
+    # Supabase / generic storage
+    STORAGE_URL: str = os.getenv("STORAGE_URL")
+    STORAGE_SERVICE_KEY: str = os.getenv("STORAGE_SERVICE_KEY")
     
     @property
     def DATABASE_URL(self) -> str:
