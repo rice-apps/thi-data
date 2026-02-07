@@ -1,9 +1,10 @@
 from celery import Celery
 from services.etl_processor import process_file_task
 from typing import Literal
+import core.config as config
 
 # TODO: Change to actual rabbitmq image location
-app = Celery('tasks', broker='pyamqp://guest@localhost//')
+app = Celery('tasks', broker=config.Settings().BROKER_URL)
 
 # TODO: To be filled in when file registry/S3 exists
 def download_file_from_s3(bucket: str, key: str) -> Literal["SUCCESS", "FAILURE"]:
