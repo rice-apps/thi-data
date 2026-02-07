@@ -7,10 +7,10 @@ load_dotenv()
 class Settings(BaseModel):
     USER: str = os.getenv("user", "postgres")
     PASSWORD: str = os.getenv("password", "password")
-    HOST: str = os.getenv("host", "localhost")
+    HOST: str = os.getenv("host", "db")
     PORT: str = os.getenv("port", "5432")
     DBNAME: str = os.getenv("dbname", "postgres")
-    BROKER_URL: str = os.getenv("broker_url", "pyamqp://guest@localhost//")
+    BROKER_URL: str = os.getenv("broker_url", "amqp://guest:guest@rabbitmq:5672//")
     ORIGIN_URL: str = os.getenv("origin_url", "http://localhost:3000")
     
     @property
