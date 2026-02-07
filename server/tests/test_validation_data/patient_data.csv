@@ -1,0 +1,11 @@
+PatientID,FirstName,LastName,Age,Gender,BloodType,LastCheckup,Condition
+P-1001,Julian,Vance,34,Male,O+,2025-11-12,None
+P-1002,Elena,Rossi,29,Female,A-,2025-08-30,Asthma
+P-1003,Marcus,Chen,52,Male,B+,2026-01-05,Hypertension
+P-1004,Sarah,Jenkins,41,Female,AB+,2025-12-15,Type 2 Diabetes
+P-1005,Alistair,Thorne,67,Male,O-,2025-09-22,None
+P-1006,Maya,Patel,24,Female,A+,2026-01-19,None
+P-1007,Leo,Guzman,38,Male,O+,2025-07-14,Seasonal Allergies
+P-1008,Fiona,Gallagher,55,Female,B-,2025-10-02,High Cholesterol
+P-1009,Derek,Smit,45,Male,AB-,2025-11-28,None
+P-1010,Naomi,Kim,31,Female,A+,2026-01-10,None

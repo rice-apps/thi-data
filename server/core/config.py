@@ -12,13 +12,22 @@ class Settings(BaseModel):
     DBNAME: str = os.getenv("dbname", "postgres")
 
     # Supabase / generic storage
-    STORAGE_URL: str = os.getenv("STORAGE_URL")
-    STORAGE_SERVICE_KEY: str = os.getenv("STORAGE_SERVICE_KEY")
+    STORAGE_URL: str = os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")
+    STORAGE_SERVICE_KEY: str = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "")
+
+    # Celery / RabbitMQ
+    BROKER_URL: str = os.getenv("broker_url", "amqp://guest:guest@localhost:5672/")
+
+    # CORS
+    ORIGIN_URL: str = os.getenv("origin_url", "http://localhost:3000")
     
     @property
     def DATABASE_URL(self) -> str:
-        db_url = f"postgresql+psycopg2://{self.USER}:{self.PASSWORD}@{self.HOST}:{self.PORT}/{self.DBNAME}?sslmode=require"
-        print(f"DB_URL = {db_url}")
-        return db_url
+        return f"postgresql+psycopg2://{self.USER}:{self.PASSWORD}@{self.HOST}:{self.PORT}/{self.DBNAME}?sslmode=require"
+
+class StorageSettings(BaseModel):
+    STORAGE_URL: str = os.getenv("STORAGE_URL", "")
+    STORAGE_KEY: str = os.getenv("STORAGE_KEY", "")
 
 settings = Settings()
+storage_settings = StorageSettings()
