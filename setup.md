@@ -99,26 +99,53 @@ You must run both the backend and frontend servers simultaneously in separate te
     ```
 3.  Open your browser and go to `http://localhost:3000` to see the application.
 
-The frontend will fetch data from the backend running on port 8000 and display it.
+## 🐳 On-Prem Deployment (Docker)
 
+The entire stack (Postgres, RabbitMQ, and the Backend) is managed via Docker Compose.
 
-
----
-
-### 4. RabbitMQ Setup 
-
-RabbitMQ is used for asynchronous task processing with Celery.
-
-1.  **Start RabbitMQ with Docker Compose:**
+1.  **Start the Infrastructure:**
+    From the root directory, run:
     ```bash
     docker-compose up -d
     ```
+    This will automatically launch **5 containers**:
+    - **Postgres 16**: The database.
+    - **RabbitMQ**: The task broker.
+    - **SeaweedFS**: The local S3-compatible storage.
+    - **FastAPI Backend**: The API server.
+    - **Celery Worker**: The background processing engine.
 
-2.  **Verify it's running:**
-    * Go to http://localhost:15672 (login: `guest`/`guest`)
+2.  **Storage Configuration:**
+    The system is pre-configured to talk to the internal `seaweedfs` container. You don't need to change any environment variables for a standard local deployment.
 
-3.  **Managing RabbitMQ:**
-    ```bash
-    docker-compose down     # Stop
-    docker-compose up -d    # Restart
-    ```
+3.  **Database Access:**
+    The local Postgres container is accessible on `localhost:5432` with:
+    - **User**: `postgres`
+    - **Password**: `password`
+    - **Database**: `postgres`
+
+4.  **Monitoring & UIs:**
+    - **Backend API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+    - **RabbitMQ Stats**: [http://localhost:15672](http://localhost:15672) (`guest`/`guest`)
+    - **SeaweedFS Explorer**: [http://localhost:8888](http://localhost:8888)
+
+---
+
+## ▶️ Running the Application (Local Dev)
+
+If you prefer to run the Backend or Frontend outside of Docker for development, follow the steps below.
+
+### 1. Start Infrastructure
+Even for local development, you should keep the Docker database and RabbitMQ running:
+```bash
+docker-compose up -d db rabbitmq
+```
+
+### 2. Start Backend
+1.  Navigate to `server`.
+2.  Activate `venv`.
+3.  Run `uvicorn main:app --reload`.
+
+### 3. Start Frontend
+1.  Navigate to `client`.
+2.  Run `npm run dev`.

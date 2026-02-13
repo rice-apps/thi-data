@@ -3,8 +3,10 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from .database import SessionLocal, Base, reflect_db
 from .storage import StorageProvider
+from .s3_storage import S3StorageProvider
 from FakeS3.fakeS3 import FakeS3
 from .constants import HIDDEN_TABLES
+from .config import settings
 
 _storage_instance: Optional[StorageProvider] = None
 
@@ -15,12 +17,23 @@ def init_app_services(storage_provider: StorageProvider = None) -> None:
     """
     global _storage_instance
     
-    # 1. Reflect Database Models
+    # Reflect Database Models
     reflect_db()
     
-    # 2. Initialize Storage (default to FakeS3 if not provided)
+    # Initialize Storage
     if _storage_instance is None:
-        _storage_instance = storage_provider or FakeS3()
+        if storage_provider:
+            _storage_instance = storage_provider
+        elif settings.USE_S3:
+            _storage_instance = S3StorageProvider(
+                endpoint_url=settings.S3_ENDPOINT,
+                access_key=settings.S3_KEY,
+                secret_key=settings.S3_SECRET,
+                bucket_name=settings.S3_BUCKET,
+                region_name=settings.S3_REGION
+            )
+        else:
+            _storage_instance = FakeS3()
 
 def get_db() -> Generator[Session, None, None]:
     """
