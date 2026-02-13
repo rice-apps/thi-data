@@ -1,9 +1,26 @@
 from typing import Generator, Any, Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from .database import SessionLocal, Base
+from .database import SessionLocal, Base, reflect_db
 from .storage import StorageProvider
+from FakeS3.fakeS3 import FakeS3
 from .constants import HIDDEN_TABLES
+
+_storage_instance: Optional[StorageProvider] = None
+
+def init_app_services(storage_provider: StorageProvider = None) -> None:
+    """
+    Centralized initialization for BOTH FastAPI and Celery Workers.
+    Ensures DB reflection is complete and storage is ready.
+    """
+    global _storage_instance
+    
+    # 1. Reflect Database Models
+    reflect_db()
+    
+    # 2. Initialize Storage (default to FakeS3 if not provided)
+    if _storage_instance is None:
+        _storage_instance = storage_provider or FakeS3()
 
 def get_db() -> Generator[Session, None, None]:
     """

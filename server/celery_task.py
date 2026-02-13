@@ -3,23 +3,23 @@ from services.etl_processor import process_file_task
 from typing import Literal
 import core.config as config
 
-from core.deps import get_db_context, get_storage_provider
-from core.database import Base, reflect_db
+from core.deps import get_db_context, get_storage_provider, init_app_services
+from core.database import Base
 import crud
 import logging
 
-# Ensure models are reflected for background worker
-reflect_db()
+# Standard service initialization for both API and Worker
+init_app_services()
 
 app = Celery('tasks', broker=config.settings.BROKER_URL)
 
-def update_file_status(file_id: str, status: str, error_msg: str = None):
-    """Update file status in the registry database."""
+def update_file_status(file_id: str, status: str, error_message: str = None):
+    """Update file status and error tracking in the registry database."""
     with next(get_db_context()) as db:
         update_data = {"status": status}
-        if error_msg:
-            # Note: We might want a dedicated error field in the model later
-            pass
+        if error_message:
+            update_data["error_message"] = error_message
+        
         crud.update_item_by_field(
             db=db,
             model_class=Base.classes.file_registry,
@@ -37,7 +37,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
     update_file_status(file_id, "PROCESSING")
 
     try:
-        # 1. Get object key from registry
+        # Get object key from registry
         with next(get_db_context()) as db:
             records = crud.get_items_by_field(
                 db=db,
@@ -49,7 +49,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
                 raise ValueError(f"File ID {file_id} not found in registry")
             object_key = records[0].object_key
 
-        # 2. Get local file path via StorageProvider
+        # Get local file path via StorageProvider
         storage_provider = get_storage_provider()
         file_path = storage_provider.get_file_path(object_key)
         
@@ -57,7 +57,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
              # In a real S3 scenario, the provider might download it to a temp path here
              raise FileNotFoundError(f"Could not resolve path for {object_key}")
 
-        # 3. Run ETL logic
+        # Run ETL logic
         error_count = process_file_task(str(file_path), proposed_schema)
         
         update_file_status(file_id, "SUCCESS")
@@ -69,5 +69,5 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
 
     except Exception as e:
         logging.error(f"Task failed for file_id {file_id}: {e}")
-        update_file_status(file_id, "FAILED")
+        update_file_status(file_id, "FAILED", error_message=str(e))
         raise e

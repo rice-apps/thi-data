@@ -10,7 +10,8 @@ def load_to_postgres(con):
     pipeline = dlt.pipeline(
         pipeline_name='duckdb_to_postgres',
         destination=settings.DLT_DESTINATION,
-        dataset_name=settings.DLT_DATASET
+        dataset_name=settings.DLT_DATASET,
+        credentials=settings.DLT_CREDENTIALS
     )
     
     # Stream clean data to data warehouse

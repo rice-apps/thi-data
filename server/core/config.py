@@ -28,8 +28,12 @@ class Settings(BaseModel):
     
     @property
     def DATABASE_URL(self) -> str:
-        # Note: DLT usually needs a slightly different format or env var, 
-        # but for SA we use this.
+        # Standard SQLAlchemy URL with driver
         return f"postgresql+psycopg2://{self.USER}:{self.PASSWORD}@{self.HOST}:{self.PORT}/{self.DBNAME}"
+
+    @property
+    def DLT_CREDENTIALS(self) -> str:
+        # DLT-friendly URL (no +psycopg2 driver prefix)
+        return f"postgresql://{self.USER}:{self.PASSWORD}@{self.HOST}:{self.PORT}/{self.DBNAME}"
 
 settings = Settings()
