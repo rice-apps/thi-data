@@ -12,9 +12,6 @@ def process_file_task(file_path: str, proposed_schema: dict):
     os.makedirs(settings.DUCKDB_TEMP_DIR, exist_ok=True)
     con.execute(f"SET temp_directory='{settings.DUCKDB_TEMP_DIR}'")
     
-    # For testing purposes
-    # con.execute("SET memory_limit='2GB'") 
-    
     try:
         # Load raw data as Strings to prevent crashes
         con.execute(f"""

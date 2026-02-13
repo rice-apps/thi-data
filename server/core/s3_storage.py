@@ -26,14 +26,14 @@ class S3StorageProvider(StorageProvider):
         self._ensure_bucket_exists()
 
     def _ensure_bucket_exists(self):
-        """Create the bucket if it doesn't already exist (essential for on-prem setup)."""
+        """Create the bucket if it doesn't already exist."""
         try:
             self.s3.head_bucket(Bucket=self.bucket_name)
         except Exception:
             try:
                 self.s3.create_bucket(Bucket=self.bucket_name)
             except Exception:
-                pass # Already exists or restricted
+                pass
 
     def generate_presigned_url(self, object_key: str) -> str:
         return self.s3.generate_presigned_url(

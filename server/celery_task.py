@@ -61,6 +61,22 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
         error_count = process_file_task(str(file_path), proposed_schema)
         
         update_file_status(file_id, "SUCCESS")
+
+        # AUTO-CLEANUP: Only on success.
+        try:
+            # Delete from S3/SeaweedFS
+            storage_provider.delete_file(object_key)
+            
+            # Delete the local temp download to save worker disk space
+            # Check if it's in the temp directory before deleting for safety
+            if "/tmp/thi-storage" in str(file_path) and file_path.exists():
+                file_path.unlink()
+                logging.info(f"Cleaned up local file: {file_path}")
+                
+        except Exception as cleanup_error:
+            # We don't fail the job if cleanup fails, just log it.
+            logging.warning(f"Cleanup failed for {file_id}: {cleanup_error}")
+
         return {
             "file_id": file_id, 
             "status": "SUCCESS", 
