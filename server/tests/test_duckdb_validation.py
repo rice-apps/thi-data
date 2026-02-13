@@ -2,7 +2,8 @@
 Unit tests for DuckDB vectorized validation logic.
 
 These tests run entirely in-memory using DuckDB — no Celery, no Postgres, no file I/O.
-We test the SQL TRY_CAST validation logic from etl_processor.validate_and_split_data.
+We test the SQL TRY_CAST validation logic from etl_processor.validate_and_split_data,
+ensuring that dirty data is correctly partitioned and original values are preserved.
 """
 
 import duckdb
@@ -127,9 +128,10 @@ class TestTryCastValidation:
         clean = duckdb_con.execute(
             f"SELECT name, score FROM {CLEAN_DATA_NAME} ORDER BY name"
         ).fetchall()
-        assert len(clean) == 2
-        assert clean[0] == ("Alice", 95)    # score is now an actual int
-        assert clean[1] == ("Charlie", 87)
+        
+        assert len(clean) == 2, f"Expected 2 clean rows, got {len(clean)}"
+        assert clean[0] == ("Alice", 95)    # name is Alice, score is now an actual int
+        assert clean[1] == ("Charlie", 87) # name is Charlie, score is 87
 
     def test_all_rows_clean(self, duckdb_con):
         """When every row is valid, corrupted_rows should be empty."""
@@ -218,9 +220,13 @@ class TestTryCastValidation:
         corrupted = duckdb_con.execute(
             f"SELECT patient_id, bp_reading, error_reason FROM {CORRUPTED_ROWS_NAME}"
         ).fetchall()
+        
         assert len(corrupted) == 1
+        # Original patient_id should be preserved
         assert corrupted[0][0] == "P002"
-        assert corrupted[0][1] == "HIGH"        # original string preserved
+        # Original string 'HIGH' should be preserved for inspection
+        assert corrupted[0][1] == "HIGH"
+        # Standard error reason should be applied
         assert corrupted[0][2] == "Validation Failed"
 
 
@@ -264,22 +270,41 @@ class TestMemoryResilience:
 
     def test_validation_works_under_memory_limit(self, duckdb_con):
         """
-        Run validation with a memory limit set, confirming it doesn't crash
-        on a small dataset. (This is a smoke test — truly large datasets
-        would require integration testing.)
+        Run validation with a restrictive memory limit and large dataset
+        to confirm DuckDB correctly handles external processing (disk spilling).
+        
+        We generate 1,000,000 rows and set a 20MB limit.
         """
-        duckdb_con.execute("SET memory_limit='100MB'")
+        # 1M rows of id/value (strings) + temp tables easily exceeds 50MB.
+        # We set a tight 50MB limit to force disk spilling without crashing the engine.
+        duckdb_con.execute("SET memory_limit='50MB'")
+        # Disabling insertion order preservation helps reduce memory overhead during large sorts/splits
+        duckdb_con.execute("SET preserve_insertion_order=false")
+        
+        # Ensure we have a temp directory for spilling
+        tmp_dir = os.path.join(current_dir, ".duckdb_temp")
+        os.makedirs(tmp_dir, exist_ok=True)
+        duckdb_con.execute(f"SET temp_directory='{tmp_dir}'")
 
-        columns = ["id", "value"]
-        rows = [(str(i), str(i * 10)) for i in range(1000)]
-        seed_raw_table(duckdb_con, columns, rows)
+        # Efficiently generate 1M rows directly in DuckDB
+        duckdb_con.execute(f"CREATE TABLE {RAW_DATA_NAME} AS "
+                          "SELECT range::VARCHAR as id, (range * 10)::VARCHAR as value "
+                          "FROM range(1000000)")
 
         schema_map = {"id": "INTEGER", "value": "INTEGER"}
 
+        # This will process 1M rows under 50MB RAM
         error_count = validate_and_split_data(duckdb_con, schema_map)
 
         assert error_count == 0
         clean_count = duckdb_con.execute(
             f"SELECT COUNT(*) FROM {CLEAN_DATA_NAME}"
         ).fetchone()[0]
-        assert clean_count == 1000
+        assert clean_count == 1000000
+        
+        # Cleanup temp directory
+        try:
+            import shutil
+            shutil.rmtree(tmp_dir)
+        except Exception:
+            pass

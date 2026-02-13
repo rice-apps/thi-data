@@ -15,6 +15,7 @@ origins = [
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     reflect_db()
+    # Initialize StorageProvider with FakeS3 for this project
     init_storage_provider(FakeS3())
     yield
 
