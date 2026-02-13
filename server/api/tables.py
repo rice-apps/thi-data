@@ -3,7 +3,7 @@ import crud
 from typing import Any
 from sqlalchemy.orm import Session
 from core.database import Base
-from core.deps import get_db, get_model_class
+from core.deps import get_db, get_model_class, get_internal_model_class
 from sqlalchemy import inspect
 
 from core.constants import HIDDEN_TABLES
@@ -31,8 +31,8 @@ def get_tables_with_metadata(db: Session = Depends(get_db)):
     all_tables = list(Base.classes.keys())
     visible_tables = [t for t in all_tables if t not in HIDDEN_TABLES]
     
-    creation_model = Base.classes.get("metadata_creation")
-    updates_model = Base.classes.get("metadata_updates")
+    creation_model = get_internal_model_class("metadata_creation")
+    updates_model = get_internal_model_class("metadata_updates")
     
     # Bulk fetch all metadata in one go
     # This matches the function defined in crud.py

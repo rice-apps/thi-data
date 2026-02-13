@@ -20,14 +20,16 @@ class Settings(BaseModel):
 
     # CORS
     ORIGIN_URL: str = os.getenv("origin_url", "http://localhost:3000")
+
+    # ETL & DLT Settings
+    DLT_DESTINATION: str = os.getenv("DLT_DESTINATION", "postgres")
+    DLT_DATASET: str = os.getenv("DLT_DATASET", "clinical_data")
+    DUCKDB_TEMP_DIR: str = os.getenv("DUCKDB_TEMP_DIR", os.path.join(os.getcwd(), "tmp_duckdb_spill"))
     
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql+psycopg2://{self.USER}:{self.PASSWORD}@{self.HOST}:{self.PORT}/{self.DBNAME}?sslmode=require"
-
-class StorageSettings(BaseModel):
-    STORAGE_URL: str = os.getenv("STORAGE_URL", "")
-    STORAGE_KEY: str = os.getenv("STORAGE_KEY", "")
+        # Note: DLT usually needs a slightly different format or env var, 
+        # but for SA we use this.
+        return f"postgresql+psycopg2://{self.USER}:{self.PASSWORD}@{self.HOST}:{self.PORT}/{self.DBNAME}"
 
 settings = Settings()
-storage_settings = StorageSettings()

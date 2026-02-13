@@ -5,7 +5,6 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from core.supabase import get_supabase_client
 from core.deps import get_db, get_storage_provider
 import crud
 from core.storage import StorageProvider

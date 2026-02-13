@@ -50,7 +50,21 @@ def get_internal_model_class(table_name: str) -> Any:
     if not model_class:
         raise HTTPException(
             status_code=500, 
-            detail=f"Configuration error: '{table_name}' table not found."
+            detail=f"Configuration error: '{table_name}' table not found. Ensure reflect_db() was called."
         )
     return model_class
+
+def get_db_context() -> Generator[Session, None, None]:
+    """
+    Context manager version of get_db for use in background tasks or scripts.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
