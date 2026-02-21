@@ -1,10 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from core.database import reflect_db
-from core.deps import init_storage_provider
+from core.deps import init_app_services
 from api import metadata, tables, rows, reflect, validation, corrupted_rows, files
-from FakeS3.fakeS3 import FakeS3
 import core.config as config
 from celery_task import process_patient_file
 
@@ -14,8 +12,8 @@ origins = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    reflect_db()
-    init_storage_provider(FakeS3())
+    # Standard service initialization for both API and Worker
+    init_app_services()
     yield
 
 app = FastAPI(lifespan=lifespan)

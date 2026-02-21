@@ -2,16 +2,15 @@ import duckdb
 import os
 from services.dlt_pipeline import load_to_postgres
 from services.dlt_pipeline import CORRUPTED_ROWS_NAME, RAW_DATA_NAME, CLEAN_DATA_NAME
+from core.config import settings
 
 def process_file_task(file_path: str, proposed_schema: dict):
     # Initialize DuckDB instance
     con = duckdb.connect(database=':memory:conn')
 
-    # Set temp directory for overflow 
-    con.execute(f"SET temp_directory='{os.getcwd()}/tmp_duckdb_spill/'")
-    
-    # For testing purposes
-    # con.execute("SET memory_limit='2GB'") 
+    # Set temp directory for overflow
+    os.makedirs(settings.DUCKDB_TEMP_DIR, exist_ok=True)
+    con.execute(f"SET temp_directory='{settings.DUCKDB_TEMP_DIR}'")
     
     try:
         # Load raw data as Strings to prevent crashes

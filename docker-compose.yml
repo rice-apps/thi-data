@@ -10,6 +10,31 @@ services:
       - rabbitmq-lib:/var/lib/rabbitmq/
       - rabbitmq-log:/var/log/rabbitmq
 
+  db:
+    image: postgres:16
+    container_name: thi-db
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  seaweedfs:
+    image: chrislusf/seaweedfs
+    container_name: thi-seaweedfs
+    restart: always
+    ports:
+      - "8333:8333" # S3 port
+      - "9333:9333" # Master port
+      - "8888:8888" # Filer port
+    command: 'server -s3 -filer -dir /data'
+    volumes:
+      - seaweedfs-data:/data
+
   backend:
     build:
       context: ./server
@@ -20,15 +45,22 @@ services:
     volumes:
       - ./server:/app
     environment:
-      - HOST=${HOST}
-      - PORT=${PORT}
-      - DBNAME=${DBNAME}
-      - ORIGIN_URL=${ORIGIN_URL}
+      - user=postgres
+      - password=password
+      - host=db
+      - port=5432
+      - dbname=postgres
+      - ORIGIN_URL=${ORIGIN_URL:-http://localhost:3000}
       - broker_url=amqp://guest:guest@rabbitmq:5672/
-      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
-      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - USE_S3=true
+      - S3_ENDPOINT=http://seaweedfs:8333
+      - S3_KEY=any
+      - S3_SECRET=any
+      - S3_BUCKET=thi-data
     depends_on:
       - rabbitmq
+      - db
+      - seaweedfs
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
   
   celery_worker:
@@ -39,18 +71,31 @@ services:
     volumes:
       - ./server:/app
     environment:
-      - HOST=${HOST}
-      - PORT=${PORT}
-      - DBNAME=${DBNAME}
-      - ORIGIN_URL=${ORIGIN_URL}
+      - user=postgres
+      - password=password
+      - host=db
+      - port=5432
+      - dbname=postgres
+      - ORIGIN_URL=${ORIGIN_URL:-http://localhost:3000}
       - broker_url=amqp://guest:guest@rabbitmq:5672/
+      - USE_S3=true
+      - S3_ENDPOINT=http://seaweedfs:8333
+      - S3_KEY=any
+      - S3_SECRET=any
+      - S3_BUCKET=thi-data
     depends_on:
       - rabbitmq
+      - db
+      - seaweedfs
     command: celery -A celery_task.app worker --loglevel=info
 
 volumes:
   rabbitmq-lib:
     driver: local
   rabbitmq-log:
+    driver: local
+  postgres-data:
+    driver: local
+  seaweedfs-data:
     driver: local
 

@@ -5,7 +5,6 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from core.supabase import get_supabase_client
 from core.deps import get_db, get_storage_provider
 import crud
 from core.storage import StorageProvider
@@ -30,19 +29,13 @@ async def upload_file(
     try:
         content = await file.read()
 
-        res = get_supabase_client().storage.from_("files").upload(
-            object_key,
-            content,
-            {"content-type": file.content_type},
-        )
+        # Use the storage provider exclusively for file storage
+        stored = storage_provider.upload_file(object_key, content)
+        
+        if not stored:
+            raise HTTPException(status_code=500, detail="Failed to store file via storage provider")
 
-        if res.get("error"):
-            presigned_url = storage_provider.generatePresignedURL()
-            stored = storage_provider.storeFile(presigned_url, content)
-            if not stored:
-                raise HTTPException(status_code=500, detail="Failed to store file")
-        else:
-            presigned_url = None
+        presigned_url = storage_provider.generate_presigned_url(object_key)
 
         crud.create_item(
             db=db,
@@ -65,20 +58,17 @@ async def upload_file(
         raise HTTPException(status_code=500, detail=f"File upload failed: {e}")
 
 @router.get("/")
-def list_files():
-    res = (
-        get_supabase_client()
-        .table("storage.objects")
-        .select("id, name, bucket_id, created_at, metadata")
-        .eq("bucket_id", "files")
-        .execute()
-    )
-    return res.data
+def list_files(
+    storage_provider: StorageProvider = Depends(get_storage_provider)
+):
+    """List files using the storage provider abstraction."""
+    return storage_provider.list_files()
 
 @router.delete("/")
 def delete_file(
     file_id: str,
     db: Session = Depends(get_db),
+    storage_provider: StorageProvider = Depends(get_storage_provider)
 ):
     file_records = crud.get_items_by_field(
         db=db,
@@ -92,11 +82,11 @@ def delete_file(
 
     record = file_records[0]
     object_key = record.object_key
+    
+    # Delete from storage provider
+    storage_provider.delete_file(object_key)
 
-    res = get_supabase_client().storage.from_("files").remove([object_key])
-    if res.get("error"):
-        raise HTTPException(status_code=500, detail=res["error"]["message"])
-
+    # Delete from database registry
     crud.delete_item_by_field(
         db=db,
         model_class=Base.classes.file_registry,

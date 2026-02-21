@@ -1,9 +1,39 @@
 from typing import Generator, Any, Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from .database import SessionLocal, Base
+from .database import SessionLocal, Base, reflect_db
 from .storage import StorageProvider
+from .s3_storage import S3StorageProvider
+from FakeS3.fakeS3 import FakeS3
 from .constants import HIDDEN_TABLES
+from .config import settings
+
+_storage_instance: Optional[StorageProvider] = None
+
+def init_app_services(storage_provider: StorageProvider = None) -> None:
+    """
+    Centralized initialization for BOTH FastAPI and Celery Workers.
+    Ensures DB reflection is complete and storage is ready.
+    """
+    global _storage_instance
+    
+    # Reflect Database Models
+    reflect_db()
+    
+    # Initialize Storage
+    if _storage_instance is None:
+        if storage_provider:
+            _storage_instance = storage_provider
+        elif settings.USE_S3:
+            _storage_instance = S3StorageProvider(
+                endpoint_url=settings.S3_ENDPOINT,
+                access_key=settings.S3_KEY,
+                secret_key=settings.S3_SECRET,
+                bucket_name=settings.S3_BUCKET,
+                region_name=settings.S3_REGION
+            )
+        else:
+            _storage_instance = FakeS3()
 
 def get_db() -> Generator[Session, None, None]:
     """
@@ -50,7 +80,21 @@ def get_internal_model_class(table_name: str) -> Any:
     if not model_class:
         raise HTTPException(
             status_code=500, 
-            detail=f"Configuration error: '{table_name}' table not found."
+            detail=f"Configuration error: '{table_name}' table not found. Ensure reflect_db() was called."
         )
     return model_class
+
+def get_db_context() -> Generator[Session, None, None]:
+    """
+    Context manager version of get_db for use in background tasks or scripts.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 

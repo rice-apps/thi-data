@@ -225,7 +225,10 @@ def test_delete_item():
     r = requests.delete(f"{API_URL}/api/{TABLE}/{item_id}")
 
     assert r.status_code == 200
-    db.expire_all()
+    
+    # Close setup session and open a fresh one to avoid isolation/caching issues
+    db.close()
+    db = next(get_db())
 
     item = crud.get_one_item(db, model_class, item_id)
     assert item is None
