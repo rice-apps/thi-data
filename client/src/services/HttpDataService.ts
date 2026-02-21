@@ -1,5 +1,6 @@
 import type {
   TableRow,
+  TableCellValue,
   TableMetadata,
   PaginationParams,
   PaginatedResponse,
@@ -123,6 +124,17 @@ export class HttpDataService {
   async deleteRow(tableName: string, id: string | number): Promise<void> {
     await this.request(`${tableName}/${id}`, {
       method: 'DELETE',
+    });
+  }
+
+  async resolveCorruptedRow(
+    tableName: string,
+    rowId: string | number,
+    fixes: Record<string, TableCellValue>
+  ): Promise<TableRow> {
+    return this.request<TableRow>(`${tableName}/${rowId}/resolve`, {
+      method: 'PATCH',
+      body: JSON.stringify(fixes),
     });
   }
 }
