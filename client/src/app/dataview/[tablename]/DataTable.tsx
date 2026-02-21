@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useServices } from '@/services';
-import type { TableRow, PaginationParams, PaginatedResponse } from '@/types';
+import type { TableRow, TableCellValue, CellError, PaginationParams, PaginatedResponse } from '@/types';
 
 type DataTableProps = {
   tablename: string;
@@ -33,6 +33,10 @@ export default function DataTable({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
+  const [resolveRow, setResolveRow] = useState<TableRow | null>(null);
+  const [resolveField, setResolveField] = useState<string | null>(null);
+  const [resolveValue, setResolveValue] = useState('');
   const [selectedRow, setSelectedRow] = useState<TableRow | null>(null);
   const [formData, setFormData] = useState<TableRow>({});
   const [error, setError] = useState<string | null>(null);
@@ -290,6 +294,53 @@ export default function DataTable({
     }
   };
 
+  const handleResolveClick = (row: TableRow, col: string) => {
+    const cellError = row._error_context?.[col];
+    setResolveRow(row);
+    setResolveField(col);
+    setResolveValue(cellError?.raw_value ?? '');
+    setIsResolveModalOpen(true);
+  };
+
+  const handleResolveSubmit = async () => {
+    if (!resolveRow || !resolveField) return;
+    setLoading(true);
+    try {
+      await dataService.resolveCorruptedRow(
+        tablename,
+        resolveRow.id as string,
+        { [resolveField]: resolveValue }
+      );
+
+      // Optimistic UI update
+      setData((prev) =>
+        prev.map((r) => {
+          if (r.id !== resolveRow.id) return r;
+          const updatedContext = { ...r._error_context };
+          delete updatedContext[resolveField];
+          const stillCorrupted = Object.keys(updatedContext).length > 0;
+          return {
+            ...r,
+            [resolveField]: resolveValue,
+            _is_corrupted: stillCorrupted,
+            _error_context: stillCorrupted ? updatedContext : undefined,
+          } as TableRow;
+        })
+      );
+
+      setIsResolveModalOpen(false);
+      showSuccess(`"${resolveField}" resolved successfully!`);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        showError(err.message || 'Failed to resolve value');
+      } else {
+        showError('Failed to resolve value');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-50">
       <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-10">
@@ -444,23 +495,69 @@ export default function DataTable({
                     </td>
                   </tr>
                 ) : (
-                  data.map((row, rowIndex) => (
+                  data.map((row, rowIndex) => {
+                    const isCorrupted = row._is_corrupted === true;
+                    return (
                     <tr
                       key={(row.id as React.Key) ?? rowIndex}
-                      className="hover:bg-slate-50 transition-colors group"
+                      className={`transition-colors group ${
+                        isCorrupted
+                          ? 'bg-red-50 border-l-4 border-red-400 hover:bg-red-100'
+                          : 'hover:bg-slate-50'
+                      }`}
                     >
-                      {columns.map((col) => (
+                      {columns.map((col) => {
+                        const cellError = row._error_context?.[col];
+                        const isCellCorrupted = row[col] == null && !!cellError;
+
+                        return (
                         <td
                           key={col}
                           className={`px-6 py-4 text-sm whitespace-nowrap ${
-                            row[col] != null
-                              ? 'text-slate-700'
-                              : 'text-slate-400 italic'
+                            isCellCorrupted
+                              ? 'text-red-600'
+                              : row[col] != null
+                                ? 'text-slate-700'
+                                : 'text-slate-400 italic'
                           }`}
                         >
-                          {String(row[col] ?? 'null')}
+                          {isCellCorrupted ? (
+                            <span className="relative inline-flex items-center gap-1.5 group/cell">
+                              <button
+                                onClick={() => handleResolveClick(row, col)}
+                                className="inline-flex items-center gap-1.5 cursor-pointer hover:underline"
+                                title="Click to fix this value"
+                              >
+                                <svg
+                                  className="w-4 h-4 text-amber-500 shrink-0"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"
+                                  />
+                                </svg>
+                                <span className="line-through opacity-75">
+                                  {cellError.raw_value}
+                                </span>
+                              </button>
+                              <span className="pointer-events-none absolute left-0 bottom-full mb-2 z-20 hidden group-hover/cell:block w-64 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-lg">
+                                <span className="block font-semibold mb-1">Validation Error</span>
+                                <span className="block text-slate-300 mb-1">Raw: {'"'}{cellError.raw_value}{'"'}</span>
+                                <span className="block text-slate-300">{cellError.error}</span>
+                                <span className="block text-amber-300 mt-1.5 text-[11px]">Click to fix</span>
+                              </span>
+                            </span>
+                          ) : (
+                            String(row[col] ?? 'null')
+                          )}
                         </td>
-                      ))}
+                        );
+                      })}
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
@@ -504,8 +601,9 @@ export default function DataTable({
                         </div>
                       </td>
                     </tr>
-                  ))
-                )}
+                    );
+                  }))
+                }
               </tbody>
             </table>
           </div>
@@ -617,6 +715,90 @@ export default function DataTable({
                   </>
                 ) : (
                   'Delete'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isResolveModalOpen && resolveRow && resolveField && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => !loading && setIsResolveModalOpen(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center gap-3">
+              <div className="p-2 bg-amber-100 rounded-lg">
+                <svg
+                  className="w-5 h-5 text-amber-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"
+                  />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-slate-800">
+                  Fix Corrupted Value
+                </h2>
+                <p className="text-sm text-slate-500">
+                  Column: <span className="font-medium text-slate-700">{resolveField}</span>
+                </p>
+              </div>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium text-red-700">Original value:</span>
+                  <code className="px-2 py-0.5 bg-red-100 rounded text-red-800 text-xs">
+                    {resolveRow._error_context?.[resolveField]?.raw_value ?? '—'}
+                  </code>
+                </div>
+                <p className="text-sm text-red-600">
+                  {resolveRow._error_context?.[resolveField]?.error ?? 'Validation failed'}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Corrected value
+                </label>
+                <input
+                  value={resolveValue}
+                  onChange={(e) => setResolveValue(e.target.value)}
+                  className="w-full px-4 py-2.5 text-slate-700 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 focus:bg-white transition-all duration-200"
+                  placeholder={`Enter corrected ${resolveField}`}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
+              <button
+                onClick={() => setIsResolveModalOpen(false)}
+                className="px-4 py-2 rounded-xl hover:bg-slate-100 text-slate-600"
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResolveSubmit}
+                disabled={loading || resolveValue.trim() === ''}
+                className="px-4 py-2 bg-amber-500 text-white rounded-xl disabled:opacity-50 hover:bg-amber-600 flex items-center gap-2 transition-colors"
+              >
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Resolving...
+                  </>
+                ) : (
+                  'Resolve'
                 )}
               </button>
             </div>

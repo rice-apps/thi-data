@@ -16,11 +16,11 @@ def refresh_warehouse( warehouse_url: str = Query(..., description="Database URL
         raise HTTPException(status_code=400, detail=f"Failed to connect to database: {e}")
 
     try:
-        lock = create_sadlock(conn, REFRESH_KEY)
-        lock.acquire()
-        Base.prepare(autoload_with=engine, reflect=True)
-        lock.release()
+        with create_sadlock(conn, REFRESH_KEY):
+            Base.prepare(autoload_with=engine, reflect=True)
     except Exception as e:
-        raise HTTPException(status_code=400,detail=f"Failed to reflect the DB: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to reflect the DB: {e}")
+    finally:
+        conn.close()
 
     return {"message": "Database reflection successful.", "tables": list(Base.classes.keys())}
