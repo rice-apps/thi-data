@@ -137,3 +137,4 @@ frictionless
 httpx
 boto3
 yarl==1.22.0
+pyarrow==19.0.0

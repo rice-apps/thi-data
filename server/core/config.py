@@ -8,15 +8,15 @@ class Settings(BaseModel):
     # Database
     USER: str = os.getenv("user", "postgres")
     PASSWORD: str = os.getenv("password", "password")
-    HOST: str = os.getenv("host", "db") # Default to 'db' for docker-compose
+    HOST: str = os.getenv("host", "localhost") # Use 'localhost' for local dev, docker-compose overrides with 'db'
     PORT: str = os.getenv("port", "5432")
     DBNAME: str = os.getenv("dbname", "postgres")
 
     # Storage Settings (SeaweedFS / S3)
-    USE_S3: bool = os.getenv("USE_S3", "false").lower() == "true"
+    USE_S3: bool = os.getenv("USE_S3", "true").lower() == "true"
     S3_ENDPOINT: str = os.getenv("S3_ENDPOINT", "http://localhost:8333")
-    S3_KEY: str = os.getenv("S3_KEY", "")
-    S3_SECRET: str = os.getenv("S3_SECRET", "")
+    S3_KEY: str = os.getenv("S3_KEY", "any")
+    S3_SECRET: str = os.getenv("S3_SECRET", "any")
     S3_BUCKET: str = os.getenv("S3_BUCKET", "thi-data")
     S3_REGION: str = os.getenv("S3_REGION", "us-east-1")
 

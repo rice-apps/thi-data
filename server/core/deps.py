@@ -1,7 +1,7 @@
 from typing import Generator, Any, Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from .database import SessionLocal, Base, reflect_db
+from .database import SessionLocal, Base, reflect_db, run_migrations
 from .storage import StorageProvider
 from .s3_storage import S3StorageProvider
 from FakeS3.fakeS3 import FakeS3
@@ -16,6 +16,9 @@ def init_app_services(storage_provider: StorageProvider = None) -> None:
     Ensures DB reflection is complete and storage is ready.
     """
     global _storage_instance
+    
+    # Run Migrations before reflecting
+    run_migrations()
     
     # Reflect Database Models
     reflect_db()

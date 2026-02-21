@@ -32,6 +32,9 @@ services:
       - "9333:9333" # Master port
       - "8888:8888" # Filer port
     command: 'server -s3 -filer -dir /data'
+    environment:
+      - AWS_ACCESS_KEY_ID=any
+      - AWS_SECRET_ACCESS_KEY=any
     volumes:
       - seaweedfs-data:/data
 

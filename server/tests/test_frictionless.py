@@ -10,8 +10,8 @@ import crud
 @pytest.fixture
 def mapping_result():
     """Runs the inference function once to be used across multiple tests."""
-    # Point this to the location of your test_data.csv
-    return crud.validation.infer_from_file("test_data.csv")
+    test_data_path = os.path.join(os.path.dirname(__file__), "test_data.csv")
+    return crud.validation.infer_from_file(test_data_path)
 
 def get_field_type(schema: dict, field_name: str) -> str | None:
     """Helper to extract the inferred type of a specific column from the schema dict."""
