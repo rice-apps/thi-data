@@ -26,18 +26,36 @@ def validate_schema(file_id: str, db: Session = Depends(get_db), storage_service
              raise HTTPException(status_code=404, detail="File object not found in storage")
 
         result = crud.infer_from_file(str(file_path))
-        return result 
+        fields = result["schema"]["fields"]
+        columns = [{"name": f["name"], "type": f["type"]} for f in fields]
+
+        crud.update_item_by_field(db = db,
+                                  model_class = Base.classes.get("file_registry"),
+                                  field_name = "file_id",
+                                  value=file_id,
+                                  update_data = {
+                                      "file_schema": {"fields": columns},
+                                      "status": "SCHEMA_INFERRED"
+                                  }
+                                ) 
+        return {
+            "file_id": file_id,
+            "columns": columns
+        }
 
     except HTTPException:
         raise
 
     except Exception as e:
         try:
-            rows = crud.get_items_by_field(db, Base.classes.get("file_registry"), "file_id", file_id)
-            if rows:
-                rec = rows[0]
-                rec.status = "FRICTIONLESS_FAILED"
-                crud.update_item(db, Base.classes.get("file_registry"), rec.id, rec)
+            crud.update_item_by_field(
+                db = db,
+                model_class=Base.classes.get("file_registry"), 
+                field_name="file_id",
+                value=file_id,
+                update_data = {"status": "FRICTIONLESS_FAILED"}
+            )
         except Exception:
             pass
+
         raise HTTPException(status_code = 500, detail=f"Schema inference failed: {e}")

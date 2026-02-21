@@ -17,7 +17,7 @@ def refresh_warehouse( warehouse_url: str = Query(..., description="Database URL
 
     lock = create_sadlock(conn, REFRESH_KEY)
     try:
-        with create_sadlock(conn, REFRESH_KEY):
+        with lock:
             Base.prepare(autoload_with=engine, reflect=True)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to reflect the DB: {e}")

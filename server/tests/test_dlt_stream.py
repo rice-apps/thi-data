@@ -116,14 +116,14 @@ class TestArrowTableExtraction:
         # First call: clean data -> final_patient_records
         first_call = mock_pipeline_instance.run.call_args_list[0]
         assert first_call[1]["table_name"] == "final_patient_records"
-        assert first_call[1]["write_disposition"] == "append"
+        assert first_call[1]["write_disposition"] == "merge"
         # Arrow-compatible type (RecordBatchReader or Table)
         assert hasattr(first_call[0][0], "schema")
 
         # Second call: corrupted rows
         second_call = mock_pipeline_instance.run.call_args_list[1]
         assert second_call[1]["table_name"] == "corrupted_rows"
-        assert second_call[1]["write_disposition"] == "append"
+        assert second_call[1]["write_disposition"] == "merge"
         assert hasattr(second_call[0][0], "schema")
 
     @patch("services.dlt_pipeline.dlt")
@@ -195,7 +195,7 @@ class TestPipelineInvocation:
         real_dlt_pipeline.load_to_postgres(duckdb_con)
 
         for c in mock_pipeline_instance.run.call_args_list:
-            assert c[1]["write_disposition"] == "append"
+            assert c[1]["write_disposition"] == "merge"
 
 
 # ===========================================================================
