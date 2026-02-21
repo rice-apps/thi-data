@@ -32,13 +32,17 @@ def setup_corrupted_row():
     created_item = None
     try:
         created_item = crud.create_item(db, model_class, new_item_data)
+        db.commit()
+        db.refresh(created_item)
         item_id = created_item.id
         yield item_id
     finally:
         if created_item:
             try:
                 crud.delete_item(db, model_class, created_item.id)
+                db.commit()
             except Exception as e:
+                db.rollback()
                 print(f"Error during teardown: {e}")
         db.close()
 
@@ -63,7 +67,11 @@ def test_create_corrupted_row():
         created_id = data["id"]
     finally:
         if created_id:
-            crud.delete_item(db, model_class, created_id)
+            try:
+                crud.delete_item(db, model_class, created_id)
+                db.commit()
+            except Exception as e:
+                db.rollback()
         db.close()
 
 def test_get_corrupted_rows(setup_corrupted_row):
@@ -94,6 +102,8 @@ def test_delete_corrupted_row():
         "error_reason": "Delete test message"
     }
     created_item = crud.create_item(db, model_class, new_item_data)
+    db.commit()
+    db.refresh(created_item)
     item_id = created_item.id
 
     # Test

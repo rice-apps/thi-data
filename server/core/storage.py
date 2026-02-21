@@ -1,21 +1,28 @@
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Optional
 
 
 class StorageProvider(ABC):
 
     @abstractmethod
-    def generatePresignedURL(self) -> str:
+    def generate_presigned_url(self, object_key: str) -> str:
         pass
 
     @abstractmethod
-    def storeFile(self, url: str, file: bytes) -> bool:
+    def upload_file(self, object_key: str, content: bytes) -> bool:
         pass
 
     @abstractmethod
-    def retrieveFile(self, url: str) -> Optional[bytes]:
+    def get_file_path(self, object_key: str) -> Optional[Path]:
+        """Resolve an object key to a local file path."""
         pass
 
     @abstractmethod
-    def deleteFile(self, url: str) -> bool:
+    def delete_file(self, object_key: str) -> bool:
+        pass
+
+    @abstractmethod
+    def list_files(self, prefix: str = "") -> list[dict]:
+        """List files in the storage provider."""
         pass

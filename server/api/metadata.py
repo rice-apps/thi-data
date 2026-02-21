@@ -33,11 +33,8 @@ def metadata_creation(
 ):
     """Create a new metadata creation record."""
     item_data = request_data.model_dump()
-    try:
-        new_item = crud.create_item(db, model_class, item_data)
-        return crud.model_to_dict(new_item)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error creating item: {e}")
+    new_item = crud.create_item(db, model_class, item_data)
+    return crud.model_to_dict(new_item)
 
 
 @router.post("/api/metadata_update", response_model=Dict[str, Any])
@@ -48,11 +45,8 @@ def metadata_update(
 ):
     """Create a new metadata update record."""
     item_data = request_data.model_dump()
-    try:
-        new_item = crud.create_item(db, model_class, item_data)
-        return crud.model_to_dict(new_item)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error creating item: {e}")
+    new_item = crud.create_item(db, model_class, item_data)
+    return crud.model_to_dict(new_item)
 
 
 # --- Reads / Filters ---

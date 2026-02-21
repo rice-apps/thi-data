@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
-from core.deps import get_db, get_model_class
+from core.deps import get_db, get_model_class, get_internal_model_class
 from core.database import Base
 import crud
 from datetime import datetime
@@ -15,12 +15,8 @@ def log_metadata_update(db: Session, table_name: str, user_name: str = "system")
     Helper to update metadata_updates table when a row is changed.
     """
     try:
-        MetadataCreation = Base.classes.get("metadata_creation")
-        MetadataUpdates = Base.classes.get("metadata_updates")
-
-        if not MetadataCreation or not MetadataUpdates:
-            logging.warning("Metadata tables not found in automap.")
-            return
+        MetadataCreation = get_internal_model_class("metadata_creation")
+        MetadataUpdates = get_internal_model_class("metadata_updates")
 
         # 1. Find the creation record ID for this table
         stmt = select(MetadataCreation).where(MetadataCreation.table_name == table_name)
@@ -51,7 +47,7 @@ def log_metadata_update(db: Session, table_name: str, user_name: str = "system")
             updated_at=datetime.now()
         )
         db.add(new_update)
-        db.commit() # Commit the log
+        db.flush() # Flush instead of commit
 
     except Exception as e:
         logging.error(f"Failed to log metadata update: {e}")

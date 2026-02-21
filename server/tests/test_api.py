@@ -41,6 +41,8 @@ def setup_item():
     try:
         # --- 1. SETUP ---
         created_item = crud.create_item(db, model_class, new_item_data)
+        db.commit()
+        db.refresh(created_item)
         item_id = created_item.id
         
         yield item_id
@@ -50,7 +52,9 @@ def setup_item():
         if created_item:
             try:
                 crud.delete_item(db, model_class, created_item.id)
+                db.commit()
             except Exception as e:
+                db.rollback()
                 print(f"Error during test teardown: {e}")
         db.close()
 
@@ -71,6 +75,8 @@ def setup_metadata_creation():
     try:
         # --- 1. SETUP ---
         created_item = crud.create_item(db, model_class, new_item_data)
+        db.commit()
+        db.refresh(created_item)
         item_id = created_item.id
         
         yield item_id
@@ -80,7 +86,9 @@ def setup_metadata_creation():
         if created_item:
             try:
                 crud.delete_item(db, model_class, created_item.id)
+                db.commit()
             except Exception as e:
+                db.rollback()
                 print(f"Error during metadata_creation fixture teardown: {e}")
         db.close()
 
@@ -146,7 +154,9 @@ def test_create_item():
         if item_id:
             try:
                 crud.delete_item(db, model_class, item_id)
+                db.commit()
             except Exception as e:
+                db.rollback()
                 print(f"Error during test_create_item teardown: {e}")
 
 
@@ -203,8 +213,11 @@ def test_delete_item():
 
     try:
         created_item = crud.create_item(db, model_class, new_item_data)
+        db.commit()
+        db.refresh(created_item)
         item_id = created_item.id
     except Exception as e:
+        db.rollback()
         db.close()
         pytest.fail(f"Test setup for test_delete_item failed: {e}")
     
@@ -212,7 +225,10 @@ def test_delete_item():
     r = requests.delete(f"{API_URL}/api/{TABLE}/{item_id}")
 
     assert r.status_code == 200
-    db.expire_all()
+    
+    # Close setup session and open a fresh one to avoid isolation/caching issues
+    db.close()
+    db = next(get_db())
 
     item = crud.get_one_item(db, model_class, item_id)
     assert item is None
@@ -270,6 +286,8 @@ def test_metadata_update(setup_metadata_creation):
         if update_item_id:
             try:
                 crud.delete_item(db, update_model_class, update_item_id)
+                db.commit()
             except Exception as e:
+                db.rollback()
                 print(f"Error during test_metadata_update teardown: {e}")
         db.close()
