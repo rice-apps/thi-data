@@ -55,17 +55,53 @@ def log_metadata_update(db: Session, table_name: str, user_name: str = "system")
 
 @router.get("/api/{table_name}")
 def get_all_items(
+    table_name: str,
     skip: int = 0,
     limit: int = 100,
     model_class: Any = Depends(get_model_class), 
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
-    items, total = crud.get_all_items(db, model_class, skip=skip, limit=limit)
-    return {
-        "data": [crud.model_to_dict(item) for item in items],
-        "total": total,
-        "page": (skip // limit) + 1,
-        "limit": limit
+    
+    CorruptedRows = Base.classes.get("corrupted_rows")
+
+    if CorruptedRows and hasattr(model_class, 'original_csv_row_id') and hasattr(CorruptedRows, 'original_csv_row_id'):
+        stmt = (
+            select(model_class, CorruptedRows)
+            .outerjoin(
+                CorruptedRows, 
+                model_class.original_csv_row_id == CorruptedRows.original_csv_row_id
+            )
+            .offset(skip)
+            .limit(limit)
+        )
+
+        total = db.query(model_class).count()
+        results = db.execute(stmt).all()
+
+        data = []
+        for main_row, corrupted_row in results:
+            item_dict = crud.model_to_dict(main_row)
+
+            if corrupted_row:
+                item_dict['corrupted'] = True
+                item_dict['corruption_reason'] = {
+                    "reason": getattr(corrupted_row, "corruption_reason", "Unknown Error"),
+                    "raw_values": crud.model_to_dict(corrupted_row)
+                }
+            else:
+                item_dict['corrupted'] = False
+                item_dict['corruption_reason'] = None
+
+            data.append(item_dict)
+
+    else:
+        items, total = crud.get_all_items(db, model_class, skip=skip, limit=limit)
+        data = [crud.model_to_dict(item) for item in items]
+        return {
+            "data": [crud.model_to_dict(item) for item in items],
+            "total": total,
+            "page": (skip // limit) + 1,
+            "limit": limit
     }
 
 @router.post("/api/{table_name}")
