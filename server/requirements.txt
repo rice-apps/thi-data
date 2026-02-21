@@ -134,5 +134,6 @@ websockets==15.0.1
 celery[amqp]==5.6.2
 sqlalchemy-dlock
 frictionless
+httpx
 boto3
 yarl==1.22.0
