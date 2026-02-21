@@ -1,6 +1,7 @@
 import { createBrowserClient } from '@supabase/ssr';
+import type { IAuthService } from './interfaces';
 
-export class SupabaseAuthService {
+export class SupabaseAuthService implements IAuthService {
   private supabase;
 
   constructor() {
@@ -22,5 +23,23 @@ export class SupabaseAuthService {
       }
     }
     return user?.email || 'Unknown User';
+  }
+
+  async getCurrentUserEmail(): Promise<string | null> {
+    const {
+      data: { user },
+    } = await this.supabase.auth.getUser();
+    return user?.email || null;
+  }
+
+  async signOut(): Promise<void> {
+    await this.supabase.auth.signOut();
+  }
+
+  async isAuthenticated(): Promise<boolean> {
+    const {
+      data: { user },
+    } = await this.supabase.auth.getUser();
+    return user !== null;
   }
 }

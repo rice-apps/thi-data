@@ -6,56 +6,38 @@ import type {
   PaginatedResponse,
   TableSchemaResponse,
 } from '@/types';
+import type { IDataService, AuthProvider } from './interfaces';
+import { HttpClient } from './HttpClient';
 
-type AuthProvider = {
-  getCurrentUserName(): Promise<string>;
-};
-
-export class HttpDataService {
-  private baseUrl: string;
+export class HttpDataService implements IDataService {
+  private httpClient: HttpClient;
   private authProvider: AuthProvider;
 
   constructor(authProvider: AuthProvider, baseUrl?: string) {
     this.authProvider = authProvider;
-    this.baseUrl =
-      baseUrl || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const url = baseUrl || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    this.httpClient = new HttpClient({
+      baseUrl: `${url.replace(/\/$/, '')}/api`,
+    });
   }
 
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
-    const cleanEndpoint = endpoint.startsWith('/')
-      ? endpoint.slice(1)
-      : endpoint;
-    const url = `${this.baseUrl.replace(/\/$/, '')}/api/${cleanEndpoint}`;
-
+  private async setAuthHeader(): Promise<void> {
     const userName = await this.authProvider.getCurrentUserName();
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(userName ? { 'X-User-Name': userName } : {}),
-      ...(options.headers as Record<string, string>),
-    };
-
-    const response = await fetch(url, { ...options, headers });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `API Error: ${response.statusText}`);
+    if (userName) {
+      this.httpClient.setHeader('X-User-Name', userName);
     }
-
-    return response.json();
   }
 
   async getTablesWithMetadata(): Promise<{ tables: TableMetadata[] }> {
-    return this.request<{ tables: TableMetadata[] }>('tables_with_metadata', {
+    await this.setAuthHeader();
+    return this.httpClient.get<{ tables: TableMetadata[] }>('tables_with_metadata', {
       cache: 'no-store',
     });
   }
 
   async getTableSchema(tableName: string): Promise<TableSchemaResponse> {
-    return this.request<TableSchemaResponse>(`schema/${tableName}`, {
+    await this.setAuthHeader();
+    return this.httpClient.get<TableSchemaResponse>(`schema/${tableName}`, {
       cache: 'no-store',
     });
   }
@@ -64,6 +46,7 @@ export class HttpDataService {
     tableName: string,
     params?: PaginationParams
   ): Promise<PaginatedResponse<TableRow>> {
+    await this.setAuthHeader();
     const searchParams = new URLSearchParams();
     if (params?.skip !== undefined)
       searchParams.append('skip', params.skip.toString());
@@ -73,7 +56,7 @@ export class HttpDataService {
     const queryString = searchParams.toString();
     const endpoint = queryString ? `${tableName}?${queryString}` : tableName;
 
-    return this.request<PaginatedResponse<TableRow>>(endpoint, {
+    return this.httpClient.get<PaginatedResponse<TableRow>>(endpoint, {
       cache: 'no-store',
     });
   }
@@ -84,6 +67,7 @@ export class HttpDataService {
     value: string,
     params?: PaginationParams
   ): Promise<PaginatedResponse<TableRow>> {
+    await this.setAuthHeader();
     const searchParams = new URLSearchParams();
     if (params?.skip !== undefined)
       searchParams.append('skip', params.skip.toString());
@@ -95,7 +79,7 @@ export class HttpDataService {
       value
     )}${queryString ? `?${queryString}` : ''}`;
 
-    return this.request<PaginatedResponse<TableRow>>(endpoint, {
+    return this.httpClient.get<PaginatedResponse<TableRow>>(endpoint, {
       cache: 'no-store',
     });
   }
@@ -104,10 +88,8 @@ export class HttpDataService {
     tableName: string,
     data: Omit<TableRow, 'id'>
   ): Promise<TableRow> {
-    return this.request<TableRow>(tableName, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    await this.setAuthHeader();
+    return this.httpClient.post<TableRow>(tableName, data);
   }
 
   async updateRow(
@@ -115,16 +97,13 @@ export class HttpDataService {
     id: string | number,
     data: Partial<TableRow>
   ): Promise<TableRow> {
-    return this.request<TableRow>(`${tableName}/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
+    await this.setAuthHeader();
+    return this.httpClient.put<TableRow>(`${tableName}/${id}`, data);
   }
 
   async deleteRow(tableName: string, id: string | number): Promise<void> {
-    await this.request(`${tableName}/${id}`, {
-      method: 'DELETE',
-    });
+    await this.setAuthHeader();
+    await this.httpClient.delete(`${tableName}/${id}`);
   }
 
   async resolveCorruptedRow(
@@ -132,9 +111,7 @@ export class HttpDataService {
     rowId: string | number,
     fixes: Record<string, TableCellValue>
   ): Promise<TableRow> {
-    return this.request<TableRow>(`${tableName}/${rowId}/resolve`, {
-      method: 'PATCH',
-      body: JSON.stringify(fixes),
-    });
+    await this.setAuthHeader();
+    return this.httpClient.patch<TableRow>(`${tableName}/${rowId}/resolve`, fixes);
   }
 }
