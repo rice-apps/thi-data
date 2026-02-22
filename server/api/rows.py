@@ -78,25 +78,45 @@ def get_all_items(
         total = db.query(model_class).count()
         results = db.execute(stmt).all()
 
+        # Get the column names from the main model for COALESCE logic
+        mapper = inspect(model_class)
+        main_columns = {c.key for c in mapper.column_attrs}
+
         data = []
         for main_row, corrupted_row in results:
             item_dict = crud.model_to_dict(main_row)
 
             if corrupted_row:
-                item_dict['corrupted'] = True
-                item_dict['corruption_reason'] = {
-                    "reason": getattr(corrupted_row, "corruption_reason", "Unknown Error"),
-                    "raw_values": crud.model_to_dict(corrupted_row)
-                }
+                corrupted_dict = crud.model_to_dict(corrupted_row)
+                error_context: Dict[str, Any] = {}
+
+                for col in main_columns:
+                    if col in ('id', 'original_csv_row_id'):
+                        continue
+                    # COALESCE: if main value is NULL and sidecar has the raw text
+                    if item_dict.get(col) is None and corrupted_dict.get(col) is not None:
+                        error_context[col] = {
+                            "raw_value": str(corrupted_dict[col]),
+                            "error": getattr(corrupted_row, "error_reason", None) or "Validation failed"
+                        }
+
+                item_dict['_is_corrupted'] = len(error_context) > 0
+                item_dict['_error_context'] = error_context if error_context else None
             else:
-                item_dict['corrupted'] = False
-                item_dict['corruption_reason'] = None
+                item_dict['_is_corrupted'] = False
+                item_dict['_error_context'] = None
 
             data.append(item_dict)
 
+        return {
+            "data": data,
+            "total": total,
+            "page": (skip // limit) + 1,
+            "limit": limit
+        }
+
     else:
         items, total = crud.get_all_items(db, model_class, skip=skip, limit=limit)
-        data = [crud.model_to_dict(item) for item in items]
         return {
             "data": [crud.model_to_dict(item) for item in items],
             "total": total,

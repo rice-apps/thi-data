@@ -43,7 +43,6 @@ def validate_and_split_data(con, schema_map):
         CREATE TABLE {CLEAN_DATA_NAME} AS
         SELECT rowid AS original_csv_row_id, {select_clause}
         FROM {RAW_DATA_NAME}
-        WHERE rowid NOT IN (SELECT original_csv_row_id FROM {CORRUPTED_ROWS_NAME})
     """)
     error_count = con.execute(f"SELECT COUNT(*) FROM {CORRUPTED_ROWS_NAME}").fetchone()[0]
     return error_count

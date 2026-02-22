@@ -105,11 +105,11 @@ class TestTryCastValidation:
 
     def test_clean_data_has_correct_cast_types(self, duckdb_con):
         """
-        The clean_data table should contain only valid rows, with columns
-        actually cast to the target types.
+        The clean_data table should contain ALL rows. Valid values are cast
+        to the target types; invalid values become NULL via TRY_CAST.
 
-        NOTE: clean_data only includes columns listed in the schema_map
-        (since validate_and_split_data SELECT's only TRY_CAST'd columns).
+        NOTE: clean_data includes ALL rows — corrupted values are NULL,
+        not excluded (validate-and-repair workflow).
         """
         columns = ["name", "score"]
         rows = [
@@ -124,14 +124,15 @@ class TestTryCastValidation:
 
         validate_and_split_data(duckdb_con, schema_map)
 
-        # Clean data should have 2 rows (Bob is corrupted)
+        # Clean data should have ALL 3 rows (Bob's score is NULL via TRY_CAST)
         clean = duckdb_con.execute(
             f"SELECT name, score FROM {CLEAN_DATA_NAME} ORDER BY name"
         ).fetchall()
         
-        assert len(clean) == 2, f"Expected 2 clean rows, got {len(clean)}"
+        assert len(clean) == 3, f"Expected 3 clean rows (all rows), got {len(clean)}"
         assert clean[0] == ("Alice", 95)    # name is Alice, score is now an actual int
-        assert clean[1] == ("Charlie", 87) # name is Charlie, score is 87
+        assert clean[1] == ("Bob", None)     # Bob's score is NULL (TRY_CAST failure)
+        assert clean[2] == ("Charlie", 87)   # name is Charlie, score is 87
 
     def test_all_rows_clean(self, duckdb_con):
         """When every row is valid, corrupted_rows should be empty."""
@@ -154,7 +155,8 @@ class TestTryCastValidation:
         assert clean_count == 3
 
     def test_all_rows_corrupted(self, duckdb_con):
-        """When every row fails validation, clean_data should be empty."""
+        """When every row fails validation, clean_data should still have all rows
+        but with NULL values (validate-and-repair workflow)."""
         columns = ["code"]
         rows = [
             ("abc",),
@@ -171,7 +173,13 @@ class TestTryCastValidation:
         clean_count = duckdb_con.execute(
             f"SELECT COUNT(*) FROM {CLEAN_DATA_NAME}"
         ).fetchone()[0]
-        assert clean_count == 0
+        assert clean_count == 3  # All rows present, but with NULL values
+
+        # All values should be NULL via TRY_CAST
+        null_count = duckdb_con.execute(
+            f"SELECT COUNT(*) FROM {CLEAN_DATA_NAME} WHERE code IS NULL"
+        ).fetchone()[0]
+        assert null_count == 3
 
     def test_multi_column_validation(self, duckdb_con):
         """
@@ -195,11 +203,18 @@ class TestTryCastValidation:
 
         assert error_count == 3
 
+        # All 5 rows should be in clean_data (validate-and-repair workflow)
         clean = duckdb_con.execute(
             f"SELECT name FROM {CLEAN_DATA_NAME} ORDER BY name"
         ).fetchall()
         clean_names = [r[0] for r in clean]
-        assert clean_names == ["Alice", "Eve"]
+        assert clean_names == ["Alice", "Bob", "Charlie", "Diana", "Eve"]
+
+        # But only Alice and Eve should have non-NULL age AND salary
+        fully_clean = duckdb_con.execute(
+            f"SELECT name FROM {CLEAN_DATA_NAME} WHERE age IS NOT NULL AND salary IS NOT NULL ORDER BY name"
+        ).fetchall()
+        assert [r[0] for r in fully_clean] == ["Alice", "Eve"]
 
     def test_corrupted_rows_preserves_original_values(self, duckdb_con):
         """

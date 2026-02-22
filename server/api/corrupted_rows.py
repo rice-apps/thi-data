@@ -2,8 +2,10 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import inspect as sa_inspect, Integer, Float, Numeric, Boolean, DateTime, Date, BigInteger, SmallInteger
 from core.deps import get_db, get_internal_model_class
 import crud
+from datetime import datetime
 
 router = APIRouter()
 
@@ -40,6 +42,53 @@ class ResolutionRequest(BaseModel):
 def get_corrupted_rows_model():
     """Dependency to get the corrupted_rows model class."""
     return get_internal_model_class(CORRUPTED_ROWS_TABLE)
+
+
+def _validate_and_cast(column_name: str, value: Any, column_type) -> Any:
+    """
+    Validate that `value` is castable to the SQLAlchemy `column_type`.
+    Returns the cast value or raises ValueError on failure.
+    """
+    if value is None:
+        return None
+
+    if isinstance(column_type, (Integer, BigInteger, SmallInteger)):
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            raise ValueError(f"Column '{column_name}' expects an integer, got '{value}'")
+
+    if isinstance(column_type, (Float, Numeric)):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            raise ValueError(f"Column '{column_name}' expects a number, got '{value}'")
+
+    if isinstance(column_type, Boolean):
+        if isinstance(value, bool):
+            return value
+        if str(value).lower() in ('true', '1', 'yes'):
+            return True
+        if str(value).lower() in ('false', '0', 'no'):
+            return False
+        raise ValueError(f"Column '{column_name}' expects a boolean, got '{value}'")
+
+    if isinstance(column_type, DateTime):
+        if isinstance(value, datetime):
+            return value
+        try:
+            return datetime.fromisoformat(str(value))
+        except (ValueError, TypeError):
+            raise ValueError(f"Column '{column_name}' expects a datetime (ISO format), got '{value}'")
+
+    if isinstance(column_type, Date):
+        try:
+            return datetime.fromisoformat(str(value)).date()
+        except (ValueError, TypeError):
+            raise ValueError(f"Column '{column_name}' expects a date (ISO format), got '{value}'")
+
+    # For String/Text and other types, return as-is
+    return value
 
 
 @router.post("/api/corrupted_rows", response_model=Dict[str, Any])
@@ -112,12 +161,23 @@ def resolve_corrupted_row(
     if not record:
         raise HTTPException(status_code=404, detail=f"Record {row_id} not found in {target_table}")
 
+    # Get column type metadata for validation
+    mapper = sa_inspect(TargetModel)
+    column_types = {c.key: c.columns[0].type for c in mapper.column_attrs if c.columns}
+
     try:
         for column, value in resolution.corrections.items():
             if not hasattr(record, column):
                 raise ValueError(f"Column '{column}' does not exist in {target_table}")
             
+            # Type-validate and cast the value before setting
+            col_type = column_types.get(column)
+            if col_type:
+                value = _validate_and_cast(column, value, col_type)
+
             setattr(record, column, value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Validation Error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Validation Error: {str(e)}")
 

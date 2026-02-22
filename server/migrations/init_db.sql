@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS public.corrupted_rows (
   resolved_at timestamp with time zone,
   resolved_by text,
   row_id bigint,
+  original_csv_row_id bigint,
   CONSTRAINT corrupted_rows_pkey PRIMARY KEY (id)
 );
 
