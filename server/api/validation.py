@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 import crud
 from core.deps import get_db, get_storage_provider
 from core.database import Base
+from core.enums import FileStatus
 from core.storage import StorageProvider
 from sqlalchemy.orm import Session
 
@@ -35,7 +36,7 @@ def validate_schema(file_id: str, db: Session = Depends(get_db), storage_service
                                   value=file_id,
                                   update_data = {
                                       "file_schema": {"fields": columns},
-                                      "status": "SCHEMA_INFERRED"
+                                      "status": FileStatus.SCHEMA_INFERRED
                                   }
                                 ) 
         return {
@@ -53,7 +54,7 @@ def validate_schema(file_id: str, db: Session = Depends(get_db), storage_service
                 model_class=Base.classes.get("file_registry"), 
                 field_name="file_id",
                 value=file_id,
-                update_data = {"status": "FRICTIONLESS_FAILED"}
+                update_data = {"status": FileStatus.FRICTIONLESS_FAILED}
             )
         except Exception:
             pass
