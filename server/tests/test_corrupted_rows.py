@@ -20,7 +20,7 @@ sys.path.insert(0, server_dir)
 from core.deps import get_db
 from core.database import Base, reflect_db
 import crud
-
+from sqlalchemy import Integer, Float, Boolean, String
 CORRUPTED_ROWS_TABLE = "corrupted_rows"
 TARGET_TABLE = "test_database"  # Must have integer 'age' column for validation tests
 API_URL = "http://localhost:8000"
@@ -355,7 +355,6 @@ class TestTypeValidation:
         assert self.validate("any_col", None, Integer()) is None
 
     def test_string_passthrough(self):
-        from sqlalchemy import String
         assert self.validate("name", "hello", String()) == "hello"
 
 

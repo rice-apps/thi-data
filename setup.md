@@ -149,3 +149,36 @@ docker-compose up -d db rabbitmq
 ### 3. Start Frontend
 1.  Navigate to `client`.
 2.  Run `npm run dev`.
+
+---
+
+## 🧪 Running Tests
+
+The backend uses `pytest` for all unit and integration tests.
+
+### Running Tests in Docker (Recommended)
+Because the application relies on an active Postgres database, the easiest way to ensure tests have access to the DB is by running them inside the running backend container.
+
+1. Ensure your Docker infrastructure is running (`docker-compose up -d`).
+2. Run `pytest` directly inside the backend container:
+   ```bash
+   docker exec -it thi-backend pytest
+   ```
+3. To run a specific test file:
+   ```bash
+   docker exec -it thi-backend pytest tests/test_corrupted_rows.py
+   ```
+
+### Running Tests Locally
+If you prefer running tests from your own terminal (e.g., using a local virtual environment), you must ensure that your local environment has the same environment variables and access to the database container.
+
+1. Start the database container:
+   ```bash
+   docker-compose up -d db
+   ```
+2. Activate your virtual environment and run `pytest`:
+   ```bash
+   cd server
+   source venv/bin/activate
+   pytest
+   ```
