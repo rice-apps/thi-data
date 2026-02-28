@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 import crud
 from core.deps import get_db
 from core.database import Base
+from core.enums import FileStatus
 import services.etl_processor as etl_processor
 
 router = APIRouter(prefix="/api/schema", tags=["schema"])
@@ -37,7 +38,7 @@ def confirm_schema(file_id: str, schema: SchemaUpdate, db: Session = Depends(get
         value=file_id,
         update_data={
             "file_schema": clean_schema,
-            "status": "SCHEMA_CONFIRMED"
+            "status": FileStatus.SCHEMA_CONFIRMED
         }
     )
 
@@ -49,6 +50,6 @@ def confirm_schema(file_id: str, schema: SchemaUpdate, db: Session = Depends(get
 
     return {
         "file_id": file_id,
-        "status": "SCHEMA_CONFIRMED",
+        "status": FileStatus.SCHEMA_CONFIRMED,
         "schema": clean_schema
     }

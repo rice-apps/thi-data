@@ -10,6 +10,7 @@ sys.path.insert(0, server_dir)
 
 from core.deps import get_db
 from core.database import Base, reflect_db
+from core.enums import FileStatus
 import crud 
 
 API_URL = "http://localhost:8000"
@@ -30,7 +31,7 @@ def setup_file_registry():
         item_data = {
             "file_id": file_id,
             "object_key": object_key,
-            "status": "UPLOADED"
+            "status": FileStatus.UPLOADED
         },
     )
     db.commit()
@@ -66,7 +67,7 @@ def test_delete_file_registry(setup_file_registry):
     assert r.status_code == 200
     data = r.json()
     assert data["file_id"] == file_id
-    assert data["status"] == "deleted"
+    assert data["status"] == FileStatus.DELETED
 
     reflect_db()
     FileRegistry = Base.classes.get("file_registry")
@@ -91,7 +92,7 @@ def test_upload_file():
         data = r.json()
         assert "file_id" in data
         assert "object_key" in data
-        assert data["status"] == "UPLOADED"
+        assert data["status"] == FileStatus.UPLOADED
     finally:
         if os.path.exists(test_file_path):
             os.remove(test_file_path)
