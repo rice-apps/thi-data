@@ -12,11 +12,6 @@ import api.reflect as reflect
 import psycopg2
 import json
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(module)s:%(lineno)d - %(levelname)s - %(message)s"
-)
-
 # Standard service initialization for both API and Worker
 init_app_services()
 
@@ -97,8 +92,14 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
             # We don't fail the job if cleanup fails, just log it.
             logging.warning(f"Cleanup failed for {file_id}: {cleanup_error}")
 
-        reflect.refresh_warehouse(warehouse_url=config.settings.DATABASE_URL)
+        reflect.refresh_warehouse()
 
+        notify_frontend({
+                "type": "celery_success",
+                "file_id": file_id,
+                "message": "Success",
+            })
+        
         return {
             "file_id": file_id, 
             "status": FileStatus.SUCCESS, 
