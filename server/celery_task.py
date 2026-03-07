@@ -9,6 +9,11 @@ from core.enums import FileStatus
 import crud
 import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(module)s:%(lineno)d - %(levelname)s - %(message)s"
+)
+
 # Standard service initialization for both API and Worker
 init_app_services()
 
