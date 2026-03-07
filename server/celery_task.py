@@ -7,11 +7,25 @@ from core.deps import get_db_context, get_storage_provider, init_app_services
 from core.database import Base
 import crud
 import logging
+import api.reflect as reflect
+import psycopg2
+import json
 
 # Standard service initialization for both API and Worker
 init_app_services()
 
 app = Celery('tasks', broker=config.settings.BROKER_URL)
+
+
+def notify_frontend(event: dict) -> None:
+    """Publish an event to Postgres LISTEN/NOTIFY channel for SSE clients."""
+    conn = psycopg2.connect(config.settings.DLT_CREDENTIALS)
+    try:
+        conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+        with conn.cursor() as cur:
+            cur.execute("NOTIFY thi_events, %s;", (json.dumps(event),))
+    finally:
+        conn.close()
 
 def update_file_status(file_id: str, status: str, error_message: str = None):
     """Update file status and error tracking in the registry database."""
@@ -77,6 +91,8 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
             # We don't fail the job if cleanup fails, just log it.
             logging.warning(f"Cleanup failed for {file_id}: {cleanup_error}")
 
+        reflect.refresh_warehouse(warehouse_url=config.settings.DATABASE_URL)
+
         return {
             "file_id": file_id, 
             "status": "SUCCESS", 
@@ -86,4 +102,13 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
     except Exception as e:
         logging.error(f"Task failed for file_id {file_id}: {e}")
         update_file_status(file_id, "FAILED", error_message=str(e))
+        try:
+            notify_frontend({
+                "type": "celery_failed",
+                "file_id": file_id,
+                "message": "Worker failed while processing file",
+                "error": str(e),
+            })
+        except Exception as notify_err:
+            logging.warning(f"Failed to send failure event for {file_id}: {notify_err}")
         raise e
