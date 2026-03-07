@@ -170,7 +170,7 @@ Since the system relies on an active Postgres database, the easiest way to run t
    ```
 3. To run a specific test file:
    ```bash
-   docker exec -it thi-backend pytest server/tests/test_corrupted_rows.py
+   docker exec -it thi-backend pytest tests/test_corrupted_rows.py
    ```
 
 ### Running Tests Locally
