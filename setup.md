@@ -152,21 +152,25 @@ docker-compose up -d db rabbitmq
 
 ---
 
-## 🧪 Running Tests
+### 🧪 Running Tests
 
 The backend uses `pytest` for all unit and integration tests.
 
 ### Running Tests in Docker (Recommended)
-Because the application relies on an active Postgres database, the easiest way to ensure tests have access to the DB is by running them inside the running backend container.
 
-1. Ensure your Docker infrastructure is running (`docker-compose up -d`).
+Since the system relies on an active Postgres database, the easiest way to run tests is inside the running backend container. The database schema is **automatically initialized** when the Docker stack first starts.
+
+1. Ensure your Docker infrastructure is running:
+   ```bash
+   docker-compose up -d
+   ```
 2. Run `pytest` directly inside the backend container:
    ```bash
    docker exec -it thi-backend pytest
    ```
 3. To run a specific test file:
    ```bash
-   docker exec -it thi-backend pytest tests/test_corrupted_rows.py
+   docker exec -it thi-backend pytest server/tests/test_corrupted_rows.py
    ```
 
 ### Running Tests Locally
