@@ -12,6 +12,11 @@ import api.reflect as reflect
 import psycopg2
 import json
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(module)s:%(lineno)d - %(levelname)s - %(message)s"
+)
+
 # Standard service initialization for both API and Worker
 init_app_services()
 

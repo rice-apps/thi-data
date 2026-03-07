@@ -7,8 +7,14 @@ from core.deps import get_db
 from core.database import Base
 from core.enums import FileStatus
 import services.etl_processor as etl_processor
+import logging
 
 router = APIRouter(prefix="/api/schema", tags=["schema"])
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(module)s:%(lineno)d -%(levelname)s - %(message)s"
+)
 
 class Column(BaseModel):
     name: str
@@ -19,6 +25,8 @@ class SchemaUpdate(BaseModel):
 
 @router.patch("/{file_id}")
 def confirm_schema(file_id: str, schema: SchemaUpdate, db: Session = Depends(get_db)):
+    logging.info(f"Confirming schema for file_id: {file_id}")
+    logging.debug(f"Schema columns: {[c.name for c in schema.columns]}")
     file_records = crud.get_items_by_field(
         db=db,
         model_class=Base.classes.get("file_registry"),
@@ -26,10 +34,12 @@ def confirm_schema(file_id: str, schema: SchemaUpdate, db: Session = Depends(get
         value=file_id
     )
     if not file_records:
+        logging.warning(f"File not found: {file_id}")
         raise HTTPException(status_code=404, detail="File not found")
 
     clean_schema = {"fields": [c.dict() for c in schema.columns]}
     schema_map = {c.name: c.type for c in schema.columns}
+    logging.debug(f"Clean schema created with {len(schema.columns)} columns")
 
     crud.update_item_by_field(
         db=db,
@@ -41,11 +51,15 @@ def confirm_schema(file_id: str, schema: SchemaUpdate, db: Session = Depends(get
             "status": FileStatus.SCHEMA_CONFIRMED
         }
     )
+    logging.info(f"File registry updated with schema for file_id: {file_id}")
 
     try:
         if hasattr(etl_processor, "run_pipeline_with_schema"):
+            logging.info(f"Starting ETL pipeline for file_id: {file_id}")
             etl_processor.run_pipeline_with_schema(file_id, schema_map)
+            logging.info(f"ETL pipeline completed successfully for file_id: {file_id}")
     except Exception as e:
+        logging.error(f"ETL pipeline failed for file_id {file_id}: {str(e)}", exc_info=True)
         print(f"ETL pipeline failed: {e}")
 
     return {
@@ -53,3 +67,5 @@ def confirm_schema(file_id: str, schema: SchemaUpdate, db: Session = Depends(get
         "status": FileStatus.SCHEMA_CONFIRMED,
         "schema": clean_schema
     }
+    logging.info(f"Schema confirmation completed for file_id: {file_id}")
+    return result
