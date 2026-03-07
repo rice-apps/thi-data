@@ -37,6 +37,7 @@ export default async function DataViewPage(props: PageProps) {
     if (columns.length === 0 && data.length > 0) {
       columns = Object.keys(data[0]).filter((k) => k !== 'id');
     }
+    columns = columns.filter((k) => !k.startsWith('_'));
   } catch (err: unknown) {
     if (err instanceof Error) {
       error = err.message;

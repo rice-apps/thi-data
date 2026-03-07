@@ -3,6 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useServices } from '@/services';
+import { COLORS, BRANDING } from '@/constants';
+import { Spinner } from '@/components/Spinner';
+import { SearchInput } from '@/components/SearchInput';
+import { formatValue } from '@/utils/formatters';
 import type { TableMetadata } from '@/types';
 import { signOutAction } from '../auth/actions';
 
@@ -18,9 +22,7 @@ export default function HomeScreen() {
   useEffect(() => {
     dataService
       .getTablesWithMetadata()
-      .then((data) => {
-        setTables(data.tables);
-      })
+      .then((data) => setTables(data.tables))
       .catch((error) => console.error(error))
       .finally(() => setLoading(false));
   }, [dataService]);
@@ -33,23 +35,22 @@ export default function HomeScreen() {
     await signOutAction();
   };
 
-  const formatValue = (value: string | null, fallback: string = '—') => {
-    return value || fallback;
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-50">
       <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1c66bb] to-[#0d4a8f] flex items-center justify-center">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ background: `linear-gradient(to bottom right, ${COLORS.PRIMARY}, ${COLORS.PRIMARY_DARK})` }}
+            >
               <span className="text-white font-bold text-lg">T</span>
             </div>
             <div>
               <h1 className="text-xl font-semibold text-slate-800">
-                Texas Hearing Institute
+                {BRANDING.COMPANY_NAME}
               </h1>
-              <p className="text-xs text-slate-500">Data Warehouse</p>
+              <p className="text-xs text-slate-500">{BRANDING.APP_SUBTITLE}</p>
             </div>
           </div>
           <button
@@ -63,28 +64,12 @@ export default function HomeScreen() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-8">
-          <div className="relative max-w-xl mx-auto">
-            <svg
-              className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search tables..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 text-slate-700 bg-white border border-slate-200 rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1c66bb]/30 focus:border-[#1c66bb] transition-all duration-200"
-            />
-          </div>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search tables..."
+            className="max-w-xl mx-auto"
+          />
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -98,7 +83,7 @@ export default function HomeScreen() {
 
           {loading ? (
             <div className="px-6 py-12 text-center text-slate-500">
-              <div className="inline-block w-6 h-6 border-2 border-[#1c66bb] border-t-transparent rounded-full animate-spin mb-3"></div>
+              <Spinner className="mx-auto mb-3" />
               <p>Loading tables...</p>
             </div>
           ) : filteredTables.length === 0 ? (
@@ -115,31 +100,23 @@ export default function HomeScreen() {
                   onMouseLeave={() => setHoveredTable(null)}
                   className={`grid grid-cols-12 gap-4 px-6 py-4 cursor-pointer transition-all duration-200 ${
                     hoveredTable === table.name
-                      ? 'bg-[#cfeff8] border-l-4 border-[#1c66bb]'
+                      ? `bg-[#cfeff8] border-l-4 border-[${COLORS.PRIMARY}]`
                       : 'hover:bg-slate-50 border-l-4 border-transparent'
                   }`}
                 >
                   <div className="col-span-4 font-medium text-slate-800">
                     {table.name}
                   </div>
-                  <div
-                    className={`col-span-2 ${table.uploadedBy ? 'text-slate-600' : 'text-slate-400 italic'}`}
-                  >
+                  <div className={`col-span-2 ${table.uploadedBy ? 'text-slate-600' : 'text-slate-400 italic'}`}>
                     {formatValue(table.uploadedBy)}
                   </div>
-                  <div
-                    className={`col-span-2 ${table.dateUploaded ? 'text-slate-600' : 'text-slate-400 italic'}`}
-                  >
+                  <div className={`col-span-2 ${table.dateUploaded ? 'text-slate-600' : 'text-slate-400 italic'}`}>
                     {formatValue(table.dateUploaded)}
                   </div>
-                  <div
-                    className={`col-span-2 ${table.dateModified ? 'text-slate-600' : 'text-slate-400 italic'}`}
-                  >
+                  <div className={`col-span-2 ${table.dateModified ? 'text-slate-600' : 'text-slate-400 italic'}`}>
                     {formatValue(table.dateModified)}
                   </div>
-                  <div
-                    className={`col-span-2 text-right ${table.size ? 'text-slate-600' : 'text-slate-400 italic'}`}
-                  >
+                  <div className={`col-span-2 text-right ${table.size ? 'text-slate-600' : 'text-slate-400 italic'}`}>
                     <span className="inline-flex items-center gap-1">
                       {table.size && (
                         <svg
@@ -171,9 +148,10 @@ export default function HomeScreen() {
         onClick={() => router.push('/data_upload')}
         onMouseEnter={() => setFabHovered(true)}
         onMouseLeave={() => setFabHovered(false)}
-        className={`fixed bottom-8 right-8 h-14 bg-gradient-to-r from-[#1c66bb] to-[#0d4a8f] text-white font-medium rounded-full shadow-lg hover:shadow-xl hover:shadow-blue-500/25 transition-all duration-300 flex items-center overflow-hidden ${
+        className={`fixed bottom-8 right-8 h-14 text-white font-medium rounded-full shadow-lg hover:shadow-xl hover:shadow-blue-500/25 transition-all duration-300 flex items-center overflow-hidden ${
           fabHovered ? 'w-40 pl-4 pr-5 justify-start gap-2' : 'w-14 justify-center'
         }`}
+        style={{ background: `linear-gradient(to right, ${COLORS.PRIMARY}, ${COLORS.PRIMARY_DARK})` }}
       >
         <svg
           className="w-6 h-6 flex-shrink-0"

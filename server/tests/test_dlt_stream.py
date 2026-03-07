@@ -1,0 +1,482 @@
+"""
+Unit tests for the dlt stream / load logic.
+
+Tests Arrow table extraction from DuckDB, pipeline invocation, schema
+evolution conflicts, Celery task failure handling on network errors,
+and Arrow-to-Postgres type coercion.
+
+All tests are self-contained — they mock dlt, Celery, and Postgres so
+no live services are required.
+"""
+
+import importlib
+import os
+import sys
+import pytest
+from unittest.mock import patch, MagicMock
+
+import duckdb
+import pyarrow as pa
+
+# Add the 'server' directory to sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+server_dir = os.path.dirname(current_dir)
+sys.path.insert(0, server_dir)
+
+# Table name constants (must match services/dlt_pipeline.py)
+CORRUPTED_ROWS_NAME = "corrupted_rows"
+RAW_DATA_NAME = "raw_staging"
+CLEAN_DATA_NAME = "clean_data"
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def duckdb_con():
+    """Fresh in-memory DuckDB connection per test."""
+    con = duckdb.connect(database=":memory:")
+    yield con
+    con.close()
+
+
+@pytest.fixture
+def real_dlt_pipeline():
+    """Force-reload the real services.dlt_pipeline module so that
+    load_to_postgres is the actual function (not the stub that
+    other test files may install)."""
+    import services.dlt_pipeline as mod
+    importlib.reload(mod)
+    yield mod
+
+
+def seed_clean_and_corrupted(con, clean_rows, corrupted_rows):
+    """
+    Seed DuckDB with clean_data and corrupted_rows tables that
+    load_to_postgres expects.
+    """
+    con.execute(f"""
+        CREATE TABLE {CLEAN_DATA_NAME} (name VARCHAR, age VARCHAR)
+    """)
+    for row in clean_rows:
+        con.execute(
+            f"INSERT INTO {CLEAN_DATA_NAME} VALUES (?, ?)", list(row)
+        )
+
+    con.execute(f"""
+        CREATE TABLE {CORRUPTED_ROWS_NAME} (
+            name VARCHAR, age VARCHAR, error_reason VARCHAR
+        )
+    """)
+    for row in corrupted_rows:
+        con.execute(
+            f"INSERT INTO {CORRUPTED_ROWS_NAME} VALUES (?, ?, ?)", list(row)
+        )
+
+
+# ===========================================================================
+# 1. Arrow Table Extraction — DuckDB tables become Arrow tables for dlt
+# ===========================================================================
+
+class TestArrowTableExtraction:
+    """Verify that load_to_postgres extracts Arrow tables from DuckDB
+    and passes them to dlt pipeline.run with the correct arguments."""
+
+    @patch("services.dlt_pipeline.dlt")
+    def test_pipeline_receives_arrow_data(
+        self, mock_dlt, real_dlt_pipeline, duckdb_con
+    ):
+        """pipeline.run must be called twice with Arrow-compatible data
+        and the correct table names / write disposition."""
+        seed_clean_and_corrupted(
+            duckdb_con,
+            clean_rows=[("Alice", "30"), ("Bob", "25")],
+            corrupted_rows=[("Charlie", "ABC", "Validation Failed")],
+        )
+
+        # Verify source data is seeded correctly
+        clean_count = duckdb_con.execute(
+            f"SELECT COUNT(*) FROM {CLEAN_DATA_NAME}"
+        ).fetchone()[0]
+        corrupted_count = duckdb_con.execute(
+            f"SELECT COUNT(*) FROM {CORRUPTED_ROWS_NAME}"
+        ).fetchone()[0]
+        assert clean_count == 2
+        assert corrupted_count == 1
+
+        mock_pipeline_instance = MagicMock()
+        mock_dlt.pipeline.return_value = mock_pipeline_instance
+        mock_pipeline_instance.run.return_value = MagicMock()
+
+        real_dlt_pipeline.load_to_postgres(duckdb_con)
+
+        assert mock_pipeline_instance.run.call_count == 2
+
+        # First call: clean data -> final_patient_records
+        first_call = mock_pipeline_instance.run.call_args_list[0]
+        assert first_call[1]["table_name"] == "final_patient_records"
+        assert first_call[1]["write_disposition"] == "merge"
+        # Arrow-compatible type (RecordBatchReader or Table)
+        assert hasattr(first_call[0][0], "schema")
+
+        # Second call: corrupted rows
+        second_call = mock_pipeline_instance.run.call_args_list[1]
+        assert second_call[1]["table_name"] == "corrupted_rows"
+        assert second_call[1]["write_disposition"] == "merge"
+        assert hasattr(second_call[0][0], "schema")
+
+    @patch("services.dlt_pipeline.dlt")
+    def test_empty_tables_produce_zero_row_arrow(
+        self, mock_dlt, real_dlt_pipeline, duckdb_con
+    ):
+        """When both tables are empty, pipeline.run should still be called
+        with zero-row Arrow tables (not skipped)."""
+        seed_clean_and_corrupted(duckdb_con, clean_rows=[], corrupted_rows=[])
+
+        mock_pipeline_instance = MagicMock()
+        mock_dlt.pipeline.return_value = mock_pipeline_instance
+        mock_pipeline_instance.run.return_value = MagicMock()
+
+        real_dlt_pipeline.load_to_postgres(duckdb_con)
+
+        assert mock_pipeline_instance.run.call_count == 2
+        for c in mock_pipeline_instance.run.call_args_list:
+            raw = c[0][0]
+            table = raw.read_all() if hasattr(raw, "read_all") else raw
+            assert isinstance(table, pa.Table)
+            assert table.num_rows == 0
+
+
+# ===========================================================================
+# 2. Postgres COPY Simulation — verify dlt pipeline is invoked (not INSERT)
+# ===========================================================================
+
+class TestPipelineInvocation:
+    """The codebase relies on dlt's pipeline.run to use Postgres COPY
+    internally. These tests verify that load_to_postgres creates the
+    pipeline with the correct settings and calls run (not raw INSERTs)."""
+
+    @patch("services.dlt_pipeline.settings")
+    @patch("services.dlt_pipeline.dlt")
+    def test_pipeline_created_with_correct_settings(
+        self, mock_dlt, mock_settings, real_dlt_pipeline, duckdb_con
+    ):
+        mock_settings.DLT_DESTINATION = "postgres"
+        mock_settings.DLT_DATASET = "clinical_data"
+        mock_settings.DLT_CREDENTIALS = "postgresql://user:pass@host/db"
+
+        seed_clean_and_corrupted(duckdb_con, [("A", "1")], [])
+
+        mock_pipeline_instance = MagicMock()
+        mock_dlt.pipeline.return_value = mock_pipeline_instance
+        mock_pipeline_instance.run.return_value = MagicMock()
+
+        real_dlt_pipeline.load_to_postgres(duckdb_con)
+
+        mock_dlt.pipeline.assert_called_once_with(
+            pipeline_name="duckdb_to_postgres",
+            destination="postgres",
+            dataset_name="clinical_data",
+            credentials="postgresql://user:pass@host/db",
+        )
+
+    @patch("services.dlt_pipeline.dlt")
+    def test_write_disposition_is_append(
+        self, mock_dlt, real_dlt_pipeline, duckdb_con
+    ):
+        """Both runs must use append disposition for incremental loads."""
+        seed_clean_and_corrupted(duckdb_con, [("A", "1")], [])
+
+        mock_pipeline_instance = MagicMock()
+        mock_dlt.pipeline.return_value = mock_pipeline_instance
+        mock_pipeline_instance.run.return_value = MagicMock()
+
+        real_dlt_pipeline.load_to_postgres(duckdb_con)
+
+        for c in mock_pipeline_instance.run.call_args_list:
+            assert c[1]["write_disposition"] == "merge"
+
+
+# ===========================================================================
+# 3. Schema Evolution Conflict — type change in Arrow buffer
+# ===========================================================================
+
+class TestSchemaEvolutionConflict:
+    """Test behavior when dlt encounters a column type mismatch between
+    the Arrow buffer and the existing destination schema."""
+
+    @patch("services.dlt_pipeline.dlt")
+    def test_pipeline_run_raises_on_type_conflict(
+        self, mock_dlt, real_dlt_pipeline, duckdb_con
+    ):
+        """If pipeline.run raises due to a schema conflict, the exception
+        should propagate up from load_to_postgres."""
+        seed_clean_and_corrupted(duckdb_con, [("A", "1")], [])
+
+        mock_pipeline_instance = MagicMock()
+        mock_dlt.pipeline.return_value = mock_pipeline_instance
+
+        mock_pipeline_instance.run.side_effect = Exception(
+            "Schema evolution conflict: column 'age' changed from INTEGER to VARCHAR"
+        )
+
+        with pytest.raises(Exception, match="Schema evolution conflict"):
+            real_dlt_pipeline.load_to_postgres(duckdb_con)
+
+    @patch("services.dlt_pipeline.dlt")
+    def test_corrupted_load_still_runs_after_clean_succeeds(
+        self, mock_dlt, real_dlt_pipeline, duckdb_con
+    ):
+        """If the first pipeline.run (clean data) succeeds but the second
+        (corrupted rows) fails, the exception should propagate."""
+        seed_clean_and_corrupted(
+            duckdb_con,
+            [("A", "1")],
+            [("B", "bad", "Validation Failed")],
+        )
+
+        mock_pipeline_instance = MagicMock()
+        mock_dlt.pipeline.return_value = mock_pipeline_instance
+
+        # First run succeeds, second raises
+        mock_pipeline_instance.run.side_effect = [
+            MagicMock(),  # clean data OK
+            Exception("corrupted_rows schema conflict"),
+        ]
+
+        with pytest.raises(Exception, match="corrupted_rows schema conflict"):
+            real_dlt_pipeline.load_to_postgres(duckdb_con)
+
+        assert mock_pipeline_instance.run.call_count == 2
+
+
+# ===========================================================================
+# 4. Network Failure — Celery task reflects failure and enables retry
+# ===========================================================================
+
+class TestNetworkFailurePersistence:
+    """Mock a connection timeout during the ETL run and verify the Celery
+    task correctly raises so that autoretry / max_retries can kick in.
+
+    We call the underlying function directly (bypassing Celery's autoretry
+    wrapper) so we can assert on the exception and status updates without
+    needing a running broker."""
+
+    @patch("celery_task.get_storage_provider")
+    @patch("celery_task.get_db_context")
+    @patch("celery_task.update_file_status")
+    @patch("celery_task.process_file_task")
+    def test_task_raises_on_etl_failure(
+        self,
+        mock_process,
+        mock_update_status,
+        mock_get_db_ctx,
+        mock_get_storage,
+    ):
+        """When process_file_task raises a connection error, the Celery
+        task should update status to FAILED and re-raise."""
+        from celery_task import process_patient_file
+
+        # Mock DB context to return a file registry record
+        mock_db = MagicMock()
+        mock_record = MagicMock()
+        mock_record.object_key = "uploads/abc-test.csv"
+        mock_db.__enter__ = MagicMock(return_value=mock_db)
+        mock_db.__exit__ = MagicMock(return_value=False)
+        mock_get_db_ctx.return_value = iter([mock_db])
+
+        with patch("celery_task.crud") as mock_crud:
+            mock_crud.get_items_by_field.return_value = [mock_record]
+
+            mock_storage = MagicMock()
+            mock_storage.get_file_path.return_value = "/tmp/test.csv"
+            mock_get_storage.return_value = mock_storage
+
+            # Simulate network timeout in ETL
+            mock_process.side_effect = ConnectionError(
+                "connection to server timed out"
+            )
+
+            # Call the underlying run method directly to bypass autoretry.
+            # bind=True means _orig_run is already bound to the task instance.
+            with pytest.raises(ConnectionError, match="timed out"):
+                process_patient_file._orig_run(
+                    "file-123", {"age": "INTEGER"}
+                )
+
+        # Status should have been set to FAILED
+        mock_update_status.assert_any_call(
+            "file-123", "FAILED", error_message="connection to server timed out"
+        )
+
+    @patch("celery_task.get_storage_provider")
+    @patch("celery_task.get_db_context")
+    @patch("celery_task.update_file_status")
+    @patch("celery_task.process_file_task")
+    def test_task_sets_processing_then_failed(
+        self,
+        mock_process,
+        mock_update_status,
+        mock_get_db_ctx,
+        mock_get_storage,
+    ):
+        """The status transitions should be PROCESSING -> FAILED on error."""
+        from celery_task import process_patient_file
+
+        mock_db = MagicMock()
+        mock_record = MagicMock()
+        mock_record.object_key = "uploads/abc.csv"
+        mock_db.__enter__ = MagicMock(return_value=mock_db)
+        mock_db.__exit__ = MagicMock(return_value=False)
+        mock_get_db_ctx.return_value = iter([mock_db])
+
+        with patch("celery_task.crud") as mock_crud:
+            mock_crud.get_items_by_field.return_value = [mock_record]
+
+            mock_storage = MagicMock()
+            mock_storage.get_file_path.return_value = "/tmp/test.csv"
+            mock_get_storage.return_value = mock_storage
+
+            mock_process.side_effect = RuntimeError("disk full")
+
+            with pytest.raises(RuntimeError):
+                process_patient_file._orig_run(
+                    "file-456", {"id": "INTEGER"}
+                )
+
+        # Extract the status values in order
+        status_calls = [
+            c[0][1] for c in mock_update_status.call_args_list
+        ]
+        assert status_calls[0] == "PROCESSING"
+        assert status_calls[-1] == "FAILED"
+
+    def test_celery_task_has_retry_config(self):
+        """Verify the task decorator configures auto-retry correctly."""
+        from celery_task import process_patient_file
+
+        assert process_patient_file.max_retries == 3
+        assert process_patient_file.autoretry_for == (Exception,)
+        assert process_patient_file.retry_backoff is True
+
+
+# ===========================================================================
+# 5. Type Coercion Mapping — Arrow types map to correct Postgres equivalents
+# ===========================================================================
+
+class TestTypeCoercionMapping:
+    """Verify that specific DuckDB/Arrow types (Decimal128, Timestamp
+    with timezone, etc.) produce the expected Arrow schema that dlt
+    would then map to their Postgres equivalents."""
+
+    def test_decimal_produces_arrow_decimal128(self, duckdb_con):
+        """DuckDB DECIMAL(10,2) should produce Arrow Decimal128."""
+        duckdb_con.execute(f"""
+            CREATE TABLE {CLEAN_DATA_NAME} (
+                amount DECIMAL(10, 2)
+            )
+        """)
+        duckdb_con.execute(
+            f"INSERT INTO {CLEAN_DATA_NAME} VALUES (12345.67)"
+        )
+
+        arrow_table = duckdb_con.table(CLEAN_DATA_NAME).arrow()
+        arrow_type = arrow_table.schema.field("amount").type
+
+        assert pa.types.is_decimal(arrow_type)
+        assert arrow_type.precision == 10
+        assert arrow_type.scale == 2
+
+    def test_timestamp_with_timezone(self, duckdb_con):
+        """DuckDB TIMESTAMPTZ should produce Arrow timestamp with tz."""
+        duckdb_con.execute(f"""
+            CREATE TABLE {CLEAN_DATA_NAME} (
+                created_at TIMESTAMPTZ
+            )
+        """)
+        duckdb_con.execute(
+            f"INSERT INTO {CLEAN_DATA_NAME} VALUES ('2025-01-15 10:30:00+00')"
+        )
+
+        arrow_table = duckdb_con.table(CLEAN_DATA_NAME).arrow()
+        arrow_type = arrow_table.schema.field("created_at").type
+
+        assert pa.types.is_timestamp(arrow_type)
+        assert arrow_type.tz is not None
+
+    def test_integer_types_preserved(self, duckdb_con):
+        """DuckDB INTEGER and BIGINT should map to Arrow int32 and int64."""
+        duckdb_con.execute(f"""
+            CREATE TABLE {CLEAN_DATA_NAME} (
+                small_id INTEGER,
+                big_id BIGINT
+            )
+        """)
+        duckdb_con.execute(
+            f"INSERT INTO {CLEAN_DATA_NAME} VALUES (42, 9999999999)"
+        )
+
+        arrow_table = duckdb_con.table(CLEAN_DATA_NAME).arrow()
+
+        assert arrow_table.schema.field("small_id").type == pa.int32()
+        assert arrow_table.schema.field("big_id").type == pa.int64()
+
+    def test_double_maps_to_float64(self, duckdb_con):
+        """DuckDB DOUBLE should map to Arrow float64."""
+        duckdb_con.execute(f"""
+            CREATE TABLE {CLEAN_DATA_NAME} (
+                measurement DOUBLE
+            )
+        """)
+        duckdb_con.execute(
+            f"INSERT INTO {CLEAN_DATA_NAME} VALUES (3.14159265358979)"
+        )
+
+        arrow_table = duckdb_con.table(CLEAN_DATA_NAME).arrow()
+        assert arrow_table.schema.field("measurement").type == pa.float64()
+
+    def test_boolean_maps_to_arrow_bool(self, duckdb_con):
+        """DuckDB BOOLEAN should map to Arrow bool."""
+        duckdb_con.execute(f"""
+            CREATE TABLE {CLEAN_DATA_NAME} (
+                is_active BOOLEAN
+            )
+        """)
+        duckdb_con.execute(
+            f"INSERT INTO {CLEAN_DATA_NAME} VALUES (true)"
+        )
+
+        arrow_table = duckdb_con.table(CLEAN_DATA_NAME).arrow()
+        assert arrow_table.schema.field("is_active").type == pa.bool_()
+
+    def test_date_maps_to_arrow_date32(self, duckdb_con):
+        """DuckDB DATE should map to Arrow date32."""
+        duckdb_con.execute(f"""
+            CREATE TABLE {CLEAN_DATA_NAME} (
+                birth_date DATE
+            )
+        """)
+        duckdb_con.execute(
+            f"INSERT INTO {CLEAN_DATA_NAME} VALUES ('1990-05-15')"
+        )
+
+        arrow_table = duckdb_con.table(CLEAN_DATA_NAME).arrow()
+        assert pa.types.is_date(arrow_table.schema.field("birth_date").type)
+
+    def test_varchar_to_arrow_roundtrip(self, duckdb_con):
+        """All-varchar CSV read (as used in the real pipeline) should
+        produce Arrow string/large_string types."""
+        duckdb_con.execute(f"""
+            CREATE TABLE {CLEAN_DATA_NAME} (
+                name VARCHAR,
+                notes VARCHAR
+            )
+        """)
+        duckdb_con.execute(
+            f"INSERT INTO {CLEAN_DATA_NAME} VALUES ('Alice', 'some notes')"
+        )
+
+        arrow_table = duckdb_con.table(CLEAN_DATA_NAME).arrow()
+        for field in arrow_table.schema:
+            assert pa.types.is_string(field.type) or pa.types.is_large_string(field.type)

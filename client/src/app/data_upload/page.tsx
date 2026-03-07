@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useServices } from '@/services';
+import { FILE_UPLOAD } from '@/constants';
+import { Button } from '@/components/Button';
 
 type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
@@ -33,8 +35,7 @@ export default function DataUploadPage() {
     setDragActive(false);
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const droppedFile = e.dataTransfer.files[0];
-      validateAndSetFile(droppedFile);
+      validateAndSetFile(e.dataTransfer.files[0]);
     }
   }, []);
 
@@ -45,22 +46,15 @@ export default function DataUploadPage() {
   };
 
   const validateAndSetFile = (selectedFile: File) => {
-    const allowedTypes = [
-      'text/csv',
-      'application/vnd.ms-excel',
-    ];
-
-    const allowedExtensions = ['.csv', '.xlsx'];
-
     const fileExtension = selectedFile.name
       .toLowerCase()
       .substring(selectedFile.name.lastIndexOf('.'));
 
     if (
-      !allowedTypes.includes(selectedFile.type) &&
-      !allowedExtensions.includes(fileExtension)
+      !FILE_UPLOAD.ALLOWED_TYPES.includes(selectedFile.type) &&
+      !FILE_UPLOAD.ALLOWED_EXTENSIONS.includes(fileExtension)
     ) {
-      setErrorMessage('Please upload a valid file (.csv, .xlsx)');
+      setErrorMessage(`Please upload a valid file (${FILE_UPLOAD.ALLOWED_EXTENSIONS.join(', ')})`);
       setUploadStatus('error');
       return;
     }
@@ -86,8 +80,7 @@ export default function DataUploadPage() {
       formData.append('file', file);
 
       const userName = await authService.getCurrentUserName();
-      const baseUrl =
-        process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
       const xhr = new XMLHttpRequest();
 
@@ -143,11 +136,6 @@ export default function DataUploadPage() {
     }
   };
 
-  const handleSignOut = async () => {
-    await authService.signOut();
-    router.push('/login');
-  };
-
   const resetUpload = () => {
     setFile(null);
     setUploadStatus('idle');
@@ -161,10 +149,8 @@ export default function DataUploadPage() {
   return (
     <div className="min-h-screen bg-white flex items-center justify-center p-6">
       <main className="w-full max-w-3xl">
-
         <div className="bg-white rounded-lg p-2">
-          
-          {/* 1. DROP ZONE AREA */}
+          {/* Drop Zone */}
           <div
             onDragEnter={handleDrag}
             onDragLeave={handleDrag}
@@ -173,7 +159,7 @@ export default function DataUploadPage() {
             className={`
               relative flex flex-col items-center justify-center h-64
               border-[3px] border-slate-500
-              bg-[#E3F2FD] 
+              bg-[#E3F2FD]
               transition-colors duration-200
               ${dragActive ? 'border-blue-500 bg-blue-100' : ''}
             `}
@@ -181,22 +167,22 @@ export default function DataUploadPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv,.xlsx"
+              accept={FILE_UPLOAD.ALLOWED_EXTENSIONS.join(',')}
               onChange={handleFileChange}
               className="hidden"
             />
 
             {/* Upload Icon */}
             <div className="mb-4">
-              <svg 
-                width="40" 
-                height="40" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="1.5" 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
+              <svg
+                width="40"
+                height="40"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
                 className="text-slate-800"
               >
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -216,28 +202,21 @@ export default function DataUploadPage() {
             </button>
           </div>
 
-          {/* 2. UPLOADED FILE SECTION (Updated Style) */}
+          {/* Uploaded File Section */}
           {file && (
             <div className="mt-8">
               <h3 className="text-lg font-medium text-slate-900 mb-2">Uploaded File</h3>
-              {/* Green background, Green border */}
               <div className="flex items-center justify-between border-[2px] border-[#68B96A] rounded p-3 bg-[#F1F8E9]">
-                
-                {/* Checkmark Icon in Circle */}
                 <div className="text-[#68B96A]">
                   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <circle cx="12" cy="12" r="10" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M8.5 12.5L10.5 14.5L15.5 9.5" />
                   </svg>
                 </div>
-
-                {/* Filename */}
                 <span className="flex-1 px-4 text-slate-900 font-semibold text-lg truncate">
                   {file.name}
                 </span>
-
-                {/* Trash/Remove Icon */}
-                <button 
+                <button
                   onClick={resetUpload}
                   className="text-slate-700 hover:text-red-600 transition-colors"
                 >
@@ -259,27 +238,28 @@ export default function DataUploadPage() {
             </div>
           )}
           {uploadStatus === 'uploading' && (
-             <div className="mt-4 w-full bg-slate-200 rounded-full h-2">
-                <div 
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-                  style={{ width: `${uploadProgress}%` }}
-                />
-             </div>
+            <div className="mt-4 w-full bg-slate-200 rounded-full h-2">
+              <div
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
           )}
           {uploadStatus === 'success' && (
-             <div className="mt-4 text-green-600 text-sm font-medium">
-               Upload Complete!
-             </div>
+            <div className="mt-4 text-green-600 text-sm font-medium">
+              Upload Complete!
+            </div>
           )}
 
-          {/* 3. ACTION BUTTONS */}
+          {/* Action Buttons */}
           <div className="flex justify-end gap-4 mt-12">
-            <button
+            <Button
+              variant="secondary"
               onClick={() => router.push('/')}
-              className="px-10 py-2.5 bg-white border border-slate-500 rounded text-slate-800 font-medium hover:bg-slate-50 transition-colors"
+              className="px-10"
             >
               Cancel
-            </button>
+            </Button>
             <button
               onClick={handleUpload}
               disabled={!file || uploadStatus === 'uploading'}
@@ -288,7 +268,6 @@ export default function DataUploadPage() {
               {uploadStatus === 'uploading' ? 'Uploading...' : 'Verify Columns'}
             </button>
           </div>
-
         </div>
       </main>
     </div>

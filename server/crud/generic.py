@@ -35,15 +35,10 @@ def get_one_item(db: Session, model_class: Any, item_id: int) -> Optional[Any]:
     return db.get(model_class, item_id)
 
 def create_item(db: Session, model_class: Any, item_data: Dict[str, Any]) -> Any:
-    try:
-        new_item = model_class(**item_data)
-        db.add(new_item)
-        db.commit()
-        db.refresh(new_item)
-        return new_item
-    except Exception as e:
-        db.rollback()
-        raise e
+    new_item = model_class(**item_data)
+    db.add(new_item)
+    db.flush()  # Flush to get the ID without committing
+    return new_item
 
 def delete_item(db: Session, model_class: Any, item_id: int) -> bool:
     item = db.get(model_class, item_id)
@@ -51,18 +46,12 @@ def delete_item(db: Session, model_class: Any, item_id: int) -> bool:
         return False
     
     db.delete(item)
-    db.commit()
     return True
 
 def update_item(db: Session, model_class: Any, item_id: int, item: Any) -> Any:
-    try:
-        db.add(item)
-        db.commit()
-        db.refresh(item)
-        return item
-    except Exception as e:
-        db.rollback()
-        raise e
+    db.add(item)
+    db.flush()
+    return item
     
 def get_items_by_field(db: Session, model_class: Any, field_name: str, value: Any) -> List[Any]:
     """
@@ -85,3 +74,31 @@ def get_items_by_date_range(db: Session, model_class: Any, date_field: str, star
 
     stmt = select(model_class).where(column.between(start, end))
     return db.execute(stmt).scalars().all()
+
+def delete_item_by_field(db: Session, model_class: Any, field_name: str, value: Any) -> int:
+    """
+    Delete items matching a field. Returns number of deleted items.
+    """
+    column = getattr(model_class, field_name, None)
+    if column is None:
+        return 0
+    
+    deleted_count = 0
+    items = get_items_by_field(db, model_class, field_name, value)
+    for item in items:
+        db.delete(item)
+        deleted_count += 1
+    return deleted_count
+
+def update_item_by_field(db: Session, model_class: Any, field_name: str, value: Any, update_data: Dict[str, Any]) -> int:
+    """
+    Update items matching a field. Returns number of updated items.
+    """
+    items = get_items_by_field(db, model_class, field_name, value)
+    updated_count = 0
+    for item in items:
+        for key, val in update_data.items():
+            setattr(item, key, val)
+        db.add(item)
+        updated_count += 1
+    return updated_count
