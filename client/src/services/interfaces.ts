@@ -6,6 +6,7 @@ import type {
   PaginatedResponse,
   TableSchemaResponse,
 } from '@/types';
+import type { ValidateSchemaResponse, FileRegistryUpdate } from './HttpDataService';
 
 /**
  * Minimal type for dependency injection of auth into data services.
@@ -52,4 +53,13 @@ export interface IDataService {
     rowId: string | number,
     fixes: Record<string, TableCellValue>
   ): Promise<TableRow>;
+  validateSchema(fileId: string): Promise<ValidateSchemaResponse>;
+  updateFileRegistry(
+    fileId: string,
+    update: FileRegistryUpdate
+  ): Promise<{ file_id: string; updated_fields: FileRegistryUpdate }>;
+  processFile(
+    fileId: string,
+    proposedSchema: Record<string, string>
+  ): Promise<{ file_id: string; status: string }>;
 }

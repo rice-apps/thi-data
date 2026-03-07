@@ -72,7 +72,7 @@ export default function SchemaEditorPage() {
 
       try {
         const result = await dataService.validateSchema(fileId);
-        const inferredFields = result.schema?.fields || [];
+        const inferredFields = result.columns || [];
 
         const nextFields: EditableSchemaField[] = inferredFields
           .map((f) => {
@@ -134,10 +134,10 @@ export default function SchemaEditorPage() {
         },
       });
 
-      // Build proposed_schema dict: {col_name: DuckDB_type}
+      // Build proposed_schema dict using ORIGINAL column names (matching the raw CSV)
       const proposedSchema: Record<string, string> = {};
       for (const f of normalizedFields) {
-        proposedSchema[f.name] = f.type;
+        proposedSchema[f.originalName] = f.type;
       }
       await dataService.processFile(fileId, proposedSchema);
 

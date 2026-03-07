@@ -13,11 +13,8 @@ type ValidateSchemaField = {
 };
 
 export type ValidateSchemaResponse = {
-  schema?: {
-    fields?: ValidateSchemaField[];
-    [key: string]: unknown;
-  };
-  sample?: unknown;
+  file_id?: string;
+  columns?: ValidateSchemaField[];
 };
 
 export type FileRegistryUpdate = {
@@ -55,35 +52,30 @@ export class HttpDataService implements IDataService {
   }
 
   async validateSchema(fileId: string): Promise<ValidateSchemaResponse> {
+    await this.setAuthHeader();
     const query = new URLSearchParams({ file_id: fileId });
-    return this.request<ValidateSchemaResponse>(`validate_schema?${query}`, {
-      method: 'POST',
-    });
+    return this.httpClient.post<ValidateSchemaResponse>(`validate_schema?${query}`);
   }
 
   async updateFileRegistry(
     fileId: string,
     update: FileRegistryUpdate
   ): Promise<{ file_id: string; updated_fields: FileRegistryUpdate }> {
-    return this.request<{
+    await this.setAuthHeader();
+    return this.httpClient.patch<{
       file_id: string;
       updated_fields: FileRegistryUpdate;
-    }>(`files/${encodeURIComponent(fileId)}`, {
-      method: 'PATCH',
-      body: JSON.stringify(update),
-    });
+    }>(`files/${encodeURIComponent(fileId)}`, update);
   }
 
   async processFile(
     fileId: string,
     proposedSchema: Record<string, string>
   ): Promise<{ file_id: string; status: string }> {
-    return this.request<{ file_id: string; status: string }>(
+    await this.setAuthHeader();
+    return this.httpClient.post<{ file_id: string; status: string }>(
       `files/${encodeURIComponent(fileId)}/process`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ proposed_schema: proposedSchema }),
-      }
+      { proposed_schema: proposedSchema }
     );
   }
 

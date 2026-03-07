@@ -43,8 +43,9 @@ def validate_and_split_data(con, schema_map):
     columns_sql = []
     error_conditions = []
     for col_name, target_type in schema_map.items():
-        columns_sql.append(f"TRY_CAST({col_name} AS {target_type}) AS {col_name}")
-        error_conditions.append(f"({col_name} IS NOT NULL AND TRY_CAST({col_name} AS {target_type}) IS NULL)")
+        q = f'"{col_name}"'
+        columns_sql.append(f"TRY_CAST({q} AS {target_type}) AS {q}")
+        error_conditions.append(f"({q} IS NOT NULL AND TRY_CAST({q} AS {target_type}) IS NULL)")
     where_clause = " OR ".join(error_conditions)
     logging.debug(f"Generated {len(columns_sql)} column casts and {len(error_conditions)} error conditions")
     
