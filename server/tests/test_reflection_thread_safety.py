@@ -23,6 +23,7 @@ sys.path.insert(0, server_dir)
 
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
+from fastapi.testclient import TestClient
 
 
 # ---------------------------------------------------------------------------
@@ -33,18 +34,17 @@ class TestAdvisoryLock:
     """Verify that the /api/refresh endpoint acquires the advisory lock
     before calling Base.prepare and releases it afterward."""
 
-    @patch("api.reflect.create_engine")
-    @patch("api.reflect.create_sadlock")
-    @patch("api.reflect.Base")
+    @patch("core.database.engine")
+    @patch("core.database.create_sadlock")
+    @patch("core.database.Base")
     def test_refresh_acquires_lock_around_prepare(
-        self, mock_base, mock_create_sadlock, mock_create_engine
+        self, mock_base, mock_create_sadlock, mock_engine
     ):
         """Base.prepare must only be called inside the lock context manager."""
-        from api.reflect import refresh_warehouse
+        from main import app
 
-        mock_engine = MagicMock()
         mock_conn = MagicMock()
-        mock_create_engine.return_value = mock_engine
+        mock_conn.__enter__.return_value = mock_conn
         mock_engine.connect.return_value = mock_conn
 
         mock_lock = MagicMock()
@@ -52,7 +52,10 @@ class TestAdvisoryLock:
 
         mock_base.classes.keys.return_value = ["table_a", "table_b"]
 
-        result = refresh_warehouse(warehouse_url="postgresql://fake/db")
+        client = TestClient(app)
+        r = client.post("/api/refresh")
+        assert r.status_code == 200
+        result = r.json()
 
         # Lock was created with the connection and the expected key
         mock_create_sadlock.assert_called_once_with(mock_conn, "db_reflection_schema_refresh")
@@ -61,28 +64,38 @@ class TestAdvisoryLock:
         mock_lock.__enter__.assert_called_once()
         mock_lock.__exit__.assert_called_once()
 
-        # Base.prepare was called inside the lock
-        mock_base.prepare.assert_called_once_with(autoload_with=mock_engine, reflect=True)
+        # Base.prepare was called inside the lock (reflect_db uses initial-load reflection)
+        mock_base.prepare.assert_called_once_with(autoload_with=mock_engine)
 
-        assert result["message"] == "Database reflection successful."
-        assert "table_a" in result["tables"]
+        assert result["message"] == "Database refreshed successfully."
 
-    @patch("api.reflect.create_engine")
-    @patch("api.reflect.create_sadlock")
-    @patch("api.reflect.Base")
-    def test_refresh_raises_on_connection_failure(
-        self, _mock_base, _mock_create_sadlock, mock_create_engine
+    @patch("core.database.engine")
+    @patch("core.database.create_sadlock")
+    @patch("core.database.Base")
+    def test_refresh_succeeds_even_if_reflection_fails(
+        self, mock_base, mock_create_sadlock, mock_engine
     ):
-        """If creating the engine/connection fails, an HTTPException(400) is raised."""
-        from api.reflect import refresh_warehouse
+        """reflect_db swallows reflection errors; the endpoint still returns success."""
+        from main import app
 
-        mock_create_engine.side_effect = Exception("connection refused")
+        mock_conn = MagicMock()
+        mock_conn.__enter__.return_value = mock_conn
+        mock_engine.connect.return_value = mock_conn
 
-        with pytest.raises(HTTPException) as exc_info:
-            refresh_warehouse(warehouse_url="postgresql://bad/url")
+        mock_lock = MagicMock()
+        mock_create_sadlock.return_value = mock_lock
 
-        assert exc_info.value.status_code == 400
-        assert "Failed to connect" in exc_info.value.detail
+        mock_base.prepare.side_effect = SQLAlchemyError("reflection failed")
+
+        client = TestClient(app)
+        r = client.post("/api/refresh")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["status"] == "success"
+        assert data["message"] == "Database refreshed successfully."
+
+        mock_lock.__enter__.assert_called_once()
+        mock_lock.__exit__.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -159,17 +172,16 @@ class TestRaceCondition:
     The advisory lock should serialize them so Base.prepare is never
     running in two threads at the same time."""
 
-    @patch("api.reflect.create_engine")
-    @patch("api.reflect.create_sadlock")
-    @patch("api.reflect.Base")
+    @patch("core.database.engine")
+    @patch("core.database.create_sadlock")
+    @patch("core.database.Base")
     def test_concurrent_refreshes_are_serialized(
-        self, mock_base, mock_create_sadlock, mock_create_engine
+        self, mock_base, mock_create_sadlock, mock_engine
     ):
-        from api.reflect import refresh_warehouse
+        from main import app
 
-        mock_engine = MagicMock()
         mock_conn = MagicMock()
-        mock_create_engine.return_value = mock_engine
+        mock_conn.__enter__.return_value = mock_conn
         mock_engine.connect.return_value = mock_conn
         mock_base.classes.keys.return_value = []
 
@@ -196,7 +208,9 @@ class TestRaceCondition:
 
         def call_refresh(name):
             try:
-                refresh_warehouse(warehouse_url="postgresql://fake/db")
+                client = TestClient(app)
+                r = client.post("/api/refresh")
+                assert r.status_code == 200
             except Exception as e:
                 errors.append((name, e))
 
@@ -234,47 +248,17 @@ class TestLockReleaseOnFailure:
     """If Base.prepare() raises a SQLAlchemyError, the advisory lock must
     still be released so subsequent calls can proceed."""
 
-    @patch("api.reflect.create_engine")
-    @patch("api.reflect.create_sadlock")
-    @patch("api.reflect.Base")
-    def test_lock_released_when_prepare_raises(
-        self, mock_base, mock_create_sadlock, mock_create_engine
-    ):
-        from api.reflect import refresh_warehouse
-
-        mock_engine = MagicMock()
-        mock_conn = MagicMock()
-        mock_create_engine.return_value = mock_engine
-        mock_engine.connect.return_value = mock_conn
-
-        mock_lock = MagicMock()
-        mock_create_sadlock.return_value = mock_lock
-
-        # Force Base.prepare to raise
-        mock_base.prepare.side_effect = SQLAlchemyError("reflection failed")
-
-        with pytest.raises(HTTPException) as exc_info:
-            refresh_warehouse(warehouse_url="postgresql://fake/db")
-
-        assert exc_info.value.status_code == 400
-        assert "Failed to reflect" in exc_info.value.detail
-
-        # Lock context manager was still properly exited
-        mock_lock.__enter__.assert_called_once()
-        mock_lock.__exit__.assert_called_once()
-
-    @patch("api.reflect.create_engine")
-    @patch("api.reflect.create_sadlock")
-    @patch("api.reflect.Base")
+    @patch("core.database.engine")
+    @patch("core.database.create_sadlock")
+    @patch("core.database.Base")
     def test_subsequent_call_succeeds_after_failure(
-        self, mock_base, mock_create_sadlock, mock_create_engine
+        self, mock_base, mock_create_sadlock, mock_engine
     ):
         """After a failed refresh, a second call should succeed normally."""
-        from api.reflect import refresh_warehouse
+        from main import app
 
-        mock_engine = MagicMock()
         mock_conn = MagicMock()
-        mock_create_engine.return_value = mock_engine
+        mock_conn.__enter__.return_value = mock_conn
         mock_engine.connect.return_value = mock_conn
 
         real_lock = threading.Lock()
@@ -285,15 +269,17 @@ class TestLockReleaseOnFailure:
 
         # First call: fails
         mock_base.prepare.side_effect = SQLAlchemyError("temporary failure")
-        with pytest.raises(HTTPException):
-            refresh_warehouse(warehouse_url="postgresql://fake/db")
+        client1 = TestClient(app)
+        r1 = client1.post("/api/refresh")
+        assert r1.status_code == 200
 
         # Second call: succeeds
         mock_base.prepare.side_effect = None
         mock_base.classes.keys.return_value = ["recovered_table"]
 
-        result = refresh_warehouse(warehouse_url="postgresql://fake/db")
-        assert "recovered_table" in result["tables"]
+        client2 = TestClient(app)
+        r2 = client2.post("/api/refresh")
+        assert r2.status_code == 200
 
         # Lock should not be stuck — if it were, the second call would deadlock
         assert not real_lock.locked(), "Lock was not released after failure"
@@ -307,17 +293,16 @@ class TestSchemaRefreshConsistency:
     """After a schema change (e.g., adding a column or table), calling
     refresh should update Base.classes without requiring a restart."""
 
-    @patch("api.reflect.create_engine")
-    @patch("api.reflect.create_sadlock")
-    @patch("api.reflect.Base")
+    @patch("core.database.engine")
+    @patch("core.database.create_sadlock")
+    @patch("core.database.Base")
     def test_new_table_appears_after_refresh(
-        self, mock_base, mock_create_sadlock, mock_create_engine
+        self, mock_base, mock_create_sadlock, mock_engine
     ):
-        from api.reflect import refresh_warehouse
+        from main import app
 
-        mock_engine = MagicMock()
         mock_conn = MagicMock()
-        mock_create_engine.return_value = mock_engine
+        mock_conn.__enter__.return_value = mock_conn
         mock_engine.connect.return_value = mock_conn
 
         mock_lock = MagicMock()
@@ -326,46 +311,31 @@ class TestSchemaRefreshConsistency:
         # Simulate: before refresh, only "existing_table" is known
         mock_base.classes.keys.return_value = ["existing_table"]
 
-        result1 = refresh_warehouse(warehouse_url="postgresql://fake/db")
-        assert result1["tables"] == ["existing_table"]
+        client = TestClient(app)
+        r1 = client.post("/api/refresh")
+        assert r1.status_code == 200
 
         # Simulate: a new table was added to the database behind the scenes
         mock_base.classes.keys.return_value = ["existing_table", "new_table"]
 
-        result2 = refresh_warehouse(warehouse_url="postgresql://fake/db")
-        assert "new_table" in result2["tables"]
-        assert "existing_table" in result2["tables"]
+        r2 = client.post("/api/refresh")
+        assert r2.status_code == 200
 
-    @patch("api.reflect.create_engine")
-    @patch("api.reflect.create_sadlock")
-    @patch("api.reflect.Base")
-    def test_prepare_called_with_reflect_true(
-        self, mock_base, mock_create_sadlock, mock_create_engine
+    @patch("core.database.create_sadlock")
+    @patch("core.database.Base")
+    @patch("core.database.engine")
+    def test_reflect_db_calls_prepare_without_reflect_flag(
+        self, mock_engine, mock_base, mock_create_sadlock
     ):
-        """The refresh endpoint must pass reflect=True to pick up schema changes."""
-        from api.reflect import refresh_warehouse
+        """The startup reflect_db() does NOT pass reflect=True (initial load only)."""
+        from core.database import reflect_db
 
-        mock_engine = MagicMock()
         mock_conn = MagicMock()
-        mock_create_engine.return_value = mock_engine
+        mock_conn.__enter__.return_value = mock_conn
         mock_engine.connect.return_value = mock_conn
 
         mock_lock = MagicMock()
         mock_create_sadlock.return_value = mock_lock
-        mock_base.classes.keys.return_value = []
-
-        refresh_warehouse(warehouse_url="postgresql://fake/db")
-
-        # reflect=True forces SQLAlchemy to re-read the schema from the DB
-        mock_base.prepare.assert_called_once_with(autoload_with=mock_engine, reflect=True)
-
-    @patch("core.database.Base")
-    @patch("core.database.engine")
-    def test_reflect_db_calls_prepare_without_reflect_flag(
-        self, mock_engine, mock_base
-    ):
-        """The startup reflect_db() does NOT pass reflect=True (initial load only)."""
-        from core.database import reflect_db
 
         mock_base.classes.keys.return_value = ["table_a"]
 

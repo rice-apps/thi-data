@@ -26,7 +26,7 @@ def load_to_postgres(con):
     logging.info(f"Loading clean data from table: {CLEAN_DATA_NAME}")
     arrow_table = con.table(f"{CLEAN_DATA_NAME}").arrow()
     corrupted_table = con.table(f"{CORRUPTED_ROWS_NAME}").arrow()
-    logging.debug(f"Arrow tables loaded - clean data rows: {len(arrow_table)}, corrupted rows: {len(corrupted_table)}")
+    logging.debug("Arrow tables loaded")
 
     logging.info("Running pipeline for final_patient_records table")
     info = pipeline.run(
