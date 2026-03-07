@@ -5,6 +5,10 @@ from schemas.metadata import MetadataCreationRequest, MetadataUpdateRequest
 from core.deps import get_db, get_internal_model_class
 from datetime import date, datetime, time
 import crud
+from frictionless import describe
+import tempfile
+import os
+from core.supabase import supabase
 
 router = APIRouter()
 
@@ -73,9 +77,9 @@ def search_created_by(
 ):
     """Search metadata creation records by creator name."""
     results = crud.get_items_by_field(db, model_class, "created_by", name)
-    # Apply pagination manually since get_items_by_field doesn't paginate
     total = len(results)
     paginated = results[skip:skip + limit]
+
     return {
         "data": [crud.model_to_dict(item) for item in paginated],
         "total": total,
@@ -96,6 +100,7 @@ def search_updated_by(
     results = crud.get_items_by_field(db, model_class, "updated_by", name)
     total = len(results)
     paginated = results[skip:skip + limit]
+
     return {
         "data": [crud.model_to_dict(item) for item in paginated],
         "total": total,
@@ -116,10 +121,14 @@ def filter_created_at(
     """Filter metadata creation records by date range."""
     start_datetime = datetime.combine(start_date, time.min)
     end_datetime = datetime.combine(end_date, time.max)
-    
-    results = crud.get_items_by_date_range(db, model_class, "created_at", start_datetime, end_datetime)
+
+    results = crud.get_items_by_date_range(
+        db, model_class, "created_at", start_datetime, end_datetime
+    )
+
     total = len(results)
     paginated = results[skip:skip + limit]
+
     return {
         "data": [crud.model_to_dict(item) for item in paginated],
         "total": total,
@@ -140,13 +149,54 @@ def filter_updated_at(
     """Filter metadata update records by date range."""
     start_datetime = datetime.combine(start_date, time.min)
     end_datetime = datetime.combine(end_date, time.max)
-    
-    results = crud.get_items_by_date_range(db, model_class, "updated_at", start_datetime, end_datetime)
+
+    results = crud.get_items_by_date_range(
+        db, model_class, "updated_at", start_datetime, end_datetime
+    )
+
     total = len(results)
     paginated = results[skip:skip + limit]
+
     return {
         "data": [crud.model_to_dict(item) for item in paginated],
         "total": total,
         "page": (skip // limit) + 1 if limit > 0 else 1,
         "limit": limit
+    }
+
+@router.post("/api/validate_schema")
+def validate_schema(file_id: str = Query(...)):
+    """
+    Infer schema for an uploaded file using Frictionless.
+    """
+
+    res = (
+        supabase
+        .table("file_registry")
+        .select("*")
+        .eq("id", file_id)
+        .single()
+        .execute()
+    )
+
+    if not res.data:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_record = res.data
+    object_key = file_record["object_key"]
+
+    file_bytes = supabase.storage.from_("files").download(object_key)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+
+    try:
+        resource = describe(tmp_path)
+        schema = resource.get("schema", {})
+    finally:
+        os.remove(tmp_path)
+
+    return {
+        "schema": schema
     }

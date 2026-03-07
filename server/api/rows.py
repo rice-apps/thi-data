@@ -42,7 +42,7 @@ def log_metadata_update(db: Session, table_name: str, user_name: str = "system")
                 logging.error(f"Failed to auto-create metadata_creation record: {e}")
                 return
         else:
-            creation_id = creation_record.id
+            creation_id = creation_record.file_id
 
         # 2. Create the update record
         new_update = MetadataUpdates(

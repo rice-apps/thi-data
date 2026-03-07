@@ -1,15 +1,20 @@
 import dlt
+from dlt.destinations import postgres
+
+from core.config import settings
 
 CORRUPTED_ROWS_NAME = "corrupted_rows"
 RAW_DATA_NAME = "raw_staging"
 CLEAN_DATA_NAME = "clean_data"
 
 def load_to_postgres(con):
-    # Setup dlt pipeline
-    # TODO: Configure data warehouse info
+    credentials = (
+        f"postgresql://{settings.USER}:{settings.PASSWORD}"
+        f"@{settings.HOST}:{settings.PORT}/{settings.DBNAME}?sslmode=require"
+    )
     pipeline = dlt.pipeline(
         pipeline_name='duckdb_to_postgres',
-        destination="postgres",
+        destination=postgres(credentials=credentials),
         dataset_name='postgres'
     )
     

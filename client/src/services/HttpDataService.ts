@@ -6,6 +6,25 @@ import type {
   TableSchemaResponse,
 } from '@/types';
 
+type ValidateSchemaField = {
+  name?: string;
+  type?: string;
+};
+
+export type ValidateSchemaResponse = {
+  schema?: {
+    fields?: ValidateSchemaField[];
+    [key: string]: unknown;
+  };
+  sample?: unknown;
+};
+
+export type FileRegistryUpdate = {
+  status?: string;
+  object_key?: string;
+  file_schema?: unknown;
+};
+
 type AuthProvider = {
   getCurrentUserName(): Promise<string>;
 };
@@ -51,6 +70,39 @@ export class HttpDataService {
     return this.request<{ tables: TableMetadata[] }>('tables_with_metadata', {
       cache: 'no-store',
     });
+  }
+
+  async validateSchema(fileId: string): Promise<ValidateSchemaResponse> {
+    const query = new URLSearchParams({ file_id: fileId });
+    return this.request<ValidateSchemaResponse>(`validate_schema?${query}`, {
+      method: 'POST',
+    });
+  }
+
+  async updateFileRegistry(
+    fileId: string,
+    update: FileRegistryUpdate
+  ): Promise<{ file_id: string; updated_fields: FileRegistryUpdate }> {
+    return this.request<{
+      file_id: string;
+      updated_fields: FileRegistryUpdate;
+    }>(`files/${encodeURIComponent(fileId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    });
+  }
+
+  async processFile(
+    fileId: string,
+    proposedSchema: Record<string, string>
+  ): Promise<{ file_id: string; status: string }> {
+    return this.request<{ file_id: string; status: string }>(
+      `files/${encodeURIComponent(fileId)}/process`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ proposed_schema: proposedSchema }),
+      }
+    );
   }
 
   async getTableSchema(tableName: string): Promise<TableSchemaResponse> {

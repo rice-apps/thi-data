@@ -41,7 +41,6 @@ ply==3.11
 prompt_toolkit==3.0.52
 psycopg==3.2.12
 psycopg-binary==3.2.12
-psycopg2==2.9.11
 psycopg2-binary==2.9.11
 pyarrow==22.0.0
 pydantic==2.12.3
@@ -82,3 +81,4 @@ websockets==15.0.1
 celery[amqp]==5.6.2
 sqlalchemy-dlock
 frictionless
+supabase==2.28.0

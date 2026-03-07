@@ -10,3 +10,12 @@ def get_supabase_client():
             raise RuntimeError("Storage credentials are not set.")
         _client = create_client(settings.STORAGE_URL, settings.STORAGE_SERVICE_KEY)
     return _client
+
+
+class _LazySupabaseClient:
+    def __getattr__(self, name):
+        return getattr(get_supabase_client(), name)
+
+
+# Backwards-compatible import for code that expects `supabase` to be a client.
+supabase = _LazySupabaseClient()
