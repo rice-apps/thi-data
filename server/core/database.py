@@ -49,9 +49,11 @@ def run_migrations():
             sql = f.read()
         
         with engine.begin() as connection:
-            # Split by semicolon and filter out empty strings to execute properly
-            # Actually, engine.execute(text(sql)) should work for PG with begin()
-            connection.execute(text(sql))
+            # Robust execution of multi-statement SQL files
+            statements = [stmt.strip() for stmt in sql.split(";") if stmt.strip()]
+            for statement in statements:
+                connection.execute(text(statement))
+
             logger.info("Successfully applied migrations from init_db.sql")
     except Exception as e:
         logger.error(f"Error applying migrations: {e}")

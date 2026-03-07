@@ -5,6 +5,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from core.deps import get_db, get_storage_provider
+from core.enums import FileStatus
 import crud
 from core.storage import StorageProvider
 from core.database import Base
@@ -42,14 +43,14 @@ async def upload_file(
             item_data={
                 "file_id": file_id,
                 "object_key": object_key,
-                "status": "UPLOADED",
+                "status": FileStatus.UPLOADED,
             },
         )
 
         return {
             "file_id": file_id,
             "object_key": object_key,
-            "status": "UPLOADED",
+            "status": FileStatus.UPLOADED,
             "presigned_url": presigned_url
         }
 
@@ -93,7 +94,7 @@ def delete_file(
         value=file_id,
     )
 
-    return {"file_id": file_id, "status": "deleted"}
+    return {"file_id": file_id, "status": FileStatus.DELETED}
 
 @router.patch("/{file_id}")
 def update_file_registry(

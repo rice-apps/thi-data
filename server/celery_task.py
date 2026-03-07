@@ -1,10 +1,11 @@
 from celery import Celery
 from services.etl_processor import process_file_task
-from typing import Literal
+from typing import Literal, Union
 import core.config as config
 
 from core.deps import get_db_context, get_storage_provider, init_app_services
 from core.database import Base
+from core.enums import FileStatus
 import crud
 import logging
 import api.reflect as reflect
@@ -27,7 +28,7 @@ def notify_frontend(event: dict) -> None:
     finally:
         conn.close()
 
-def update_file_status(file_id: str, status: str, error_message: str = None):
+def update_file_status(file_id: str, status: Union[FileStatus, str], error_message: str = None):
     """Update file status and error tracking in the registry database."""
     with next(get_db_context()) as db:
         update_data = {"status": status}
@@ -48,7 +49,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
     Celery task to process a patient data file.
     """
     logging.info(f"Starting processing for file_id: {file_id}")
-    update_file_status(file_id, "PROCESSING")
+    update_file_status(file_id, FileStatus.PROCESSING)
 
     try:
         # Get object key from registry
@@ -74,7 +75,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
         # Run ETL logic
         error_count = process_file_task(str(file_path), proposed_schema)
         
-        update_file_status(file_id, "SUCCESS")
+        update_file_status(file_id, FileStatus.SUCCESS)
 
         # AUTO-CLEANUP: Only on success.
         try:
@@ -95,13 +96,13 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
 
         return {
             "file_id": file_id, 
-            "status": "SUCCESS", 
+            "status": FileStatus.SUCCESS, 
             "error_count": error_count
         }
 
     except Exception as e:
         logging.error(f"Task failed for file_id {file_id}: {e}")
-        update_file_status(file_id, "FAILED", error_message=str(e))
+        update_file_status(file_id, FileStatus.FAILED, error_message=str(e))
         try:
             notify_frontend({
                 "type": "celery_failed",
