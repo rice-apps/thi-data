@@ -5,8 +5,14 @@ from schemas.metadata import MetadataCreationRequest, MetadataUpdateRequest
 from core.deps import get_db, get_internal_model_class
 from datetime import date, datetime, time
 import crud
+import logging
 
 router = APIRouter()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(module)s:%(lineno)d -%(levelname)s - %(message)s"
+)
 
 # Constants
 METADATA_CREATION_TABLE = "metadata_creation"
@@ -32,8 +38,10 @@ def metadata_creation(
     db: Session = Depends(get_db)
 ):
     """Create a new metadata creation record."""
+    logging.info(f"Creating metadata creation record for table: {request_data.table_name}")
     item_data = request_data.model_dump()
     new_item = crud.create_item(db, model_class, item_data)
+    logging.info(f"Metadata creation record created successfully with id: {new_item.id}")
     return crud.model_to_dict(new_item)
 
 
@@ -44,8 +52,10 @@ def metadata_update(
     db: Session = Depends(get_db)
 ):
     """Create a new metadata update record."""
+    logging.info(f"Creating metadata update record for table: {request_data.table_name}")
     item_data = request_data.model_dump()
     new_item = crud.create_item(db, model_class, item_data)
+    logging.info(f"Metadata update record created successfully with id: {new_item.id}")
     return crud.model_to_dict(new_item)
 
 
@@ -54,6 +64,7 @@ def metadata_update(
 @router.get("/api/metadata_filters")
 def metadata_filters_endpoint():
     """Placeholder for metadata filters endpoint."""
+    logging.info("Metadata filters endpoint accessed")
     return {"message": "Metadata Filters Endpoint"}
 
 
@@ -66,10 +77,12 @@ def search_created_by(
     db: Session = Depends(get_db)
 ):
     """Search metadata creation records by creator name."""
+    logging.info(f"Searching metadata creation records by created_by: {name} (skip={skip}, limit={limit})")
     results = crud.get_items_by_field(db, model_class, "created_by", name)
     # Apply pagination manually since get_items_by_field doesn't paginate
     total = len(results)
     paginated = results[skip:skip + limit]
+    logging.info(f"Found {total} metadata creation records for created_by: {name}, returning {len(paginated)} results")
     return {
         "data": [crud.model_to_dict(item) for item in paginated],
         "total": total,
@@ -87,9 +100,11 @@ def search_updated_by(
     db: Session = Depends(get_db)
 ):
     """Search metadata update records by updater name."""
+    logging.info(f"Searching metadata update records by updated_by: {name} (skip={skip}, limit={limit})")
     results = crud.get_items_by_field(db, model_class, "updated_by", name)
     total = len(results)
     paginated = results[skip:skip + limit]
+    logging.info(f"Found {total} metadata update records for updated_by: {name}, returning {len(paginated)} results")
     return {
         "data": [crud.model_to_dict(item) for item in paginated],
         "total": total,
@@ -108,12 +123,14 @@ def filter_created_at(
     db: Session = Depends(get_db)
 ):
     """Filter metadata creation records by date range."""
+    logging.info(f"Filtering metadata creation records by created_at: {start_date} to {end_date} (skip={skip}, limit={limit})")
     start_datetime = datetime.combine(start_date, time.min)
     end_datetime = datetime.combine(end_date, time.max)
     
     results = crud.get_items_by_date_range(db, model_class, "created_at", start_datetime, end_datetime)
     total = len(results)
     paginated = results[skip:skip + limit]
+    logging.info(f"Found {total} metadata creation records in date range, returning {len(paginated)} results")
     return {
         "data": [crud.model_to_dict(item) for item in paginated],
         "total": total,
@@ -132,12 +149,14 @@ def filter_updated_at(
     db: Session = Depends(get_db)
 ):
     """Filter metadata update records by date range."""
+    logging.info(f"Filtering metadata update records by updated_at: {start_date} to {end_date} (skip={skip}, limit={limit})")
     start_datetime = datetime.combine(start_date, time.min)
     end_datetime = datetime.combine(end_date, time.max)
     
     results = crud.get_items_by_date_range(db, model_class, "updated_at", start_datetime, end_datetime)
     total = len(results)
     paginated = results[skip:skip + limit]
+    logging.info(f"Found {total} metadata update records in date range, returning {len(paginated)} results")
     return {
         "data": [crud.model_to_dict(item) for item in paginated],
         "total": total,
