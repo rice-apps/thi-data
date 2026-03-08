@@ -55,7 +55,7 @@ def metadata_update(
     db: Session = Depends(get_db)
 ):
     """Create a new metadata update record."""
-    logging.info(f"Creating metadata update record for table: {request_data.table_name}")
+    logging.info(f"Creating metadata update record for foreign_key: {request_data.foreign_key}")
     item_data = request_data.model_dump()
     new_item = crud.create_item(db, model_class, item_data)
     logging.info(f"Metadata update record created successfully with id: {new_item.id}")
