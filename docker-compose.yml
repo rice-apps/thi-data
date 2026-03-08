@@ -87,10 +87,12 @@ services:
       - S3_KEY=any
       - S3_SECRET=any
       - S3_BUCKET=thi-data
+      - API_SERVER_URL=http://backend:8000
     depends_on:
       - rabbitmq
       - db
       - seaweedfs
+      - backend
     command: celery -A celery_task.app worker --loglevel=info
 
 volumes:
