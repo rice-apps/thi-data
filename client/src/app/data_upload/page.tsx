@@ -93,14 +93,20 @@ export default function DataUploadPage() {
         }
       });
 
-      const uploadPromise = new Promise<{ file_id?: string }>((resolve, reject) => {
+      const uploadPromise = new Promise<{ file_id: string }>((resolve, reject) => {
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
             try {
-              const responseData = JSON.parse(xhr.responseText || '{}');
-              resolve(responseData);
+              const data = JSON.parse(xhr.responseText || '{}') as {
+                file_id?: string;
+              };
+              if (!data.file_id) {
+                reject(new Error('Upload succeeded, but no file_id was returned'));
+                return;
+              }
+              resolve({ file_id: data.file_id });
             } catch {
-              resolve({});
+              reject(new Error('Upload succeeded, but the response was not valid JSON'));
             }
           } else {
             const errorData = JSON.parse(xhr.responseText || '{}');
@@ -117,13 +123,15 @@ export default function DataUploadPage() {
       }
       xhr.send(formData);
 
-      const responseData = await uploadPromise;
-      if (responseData?.file_id) {
-        setFileId(responseData.file_id);
-      }
+      const { file_id } = await uploadPromise;
+      setFileId(file_id);
 
       setUploadStatus('success');
       setUploadProgress(100);
+
+      router.push(
+        `/schema-editor?file_id=${encodeURIComponent(file_id)}&file_name=${encodeURIComponent(file.name)}`
+      );
     } catch (error) {
       setUploadStatus('error');
       setErrorMessage(

@@ -3,9 +3,10 @@ from pydantic import BaseModel
 from typing import List
 from sqlalchemy.orm import Session
 import crud
-from core.deps import get_db
+from core.deps import get_db, get_storage_provider
 from core.database import Base
 from core.enums import FileStatus
+from core.storage import StorageProvider
 import services.etl_processor as etl_processor
 import logging
 
@@ -24,7 +25,12 @@ class SchemaUpdate(BaseModel):
     columns: List[Column]
 
 @router.patch("/{file_id}")
-def confirm_schema(file_id: str, schema: SchemaUpdate, db: Session = Depends(get_db)):
+def confirm_schema(
+    file_id: str,
+    schema: SchemaUpdate,
+    db: Session = Depends(get_db),
+    storage: StorageProvider = Depends(get_storage_provider),
+):
     logging.info(f"Confirming schema for file_id: {file_id}")
     logging.debug(f"Schema columns: {[c.name for c in schema.columns]}")
     file_records = crud.get_items_by_field(
@@ -54,18 +60,15 @@ def confirm_schema(file_id: str, schema: SchemaUpdate, db: Session = Depends(get
     logging.info(f"File registry updated with schema for file_id: {file_id}")
 
     try:
-        if hasattr(etl_processor, "run_pipeline_with_schema"):
-            logging.info(f"Starting ETL pipeline for file_id: {file_id}")
-            etl_processor.run_pipeline_with_schema(file_id, schema_map)
-            logging.info(f"ETL pipeline completed successfully for file_id: {file_id}")
+        logging.info(f"Starting ETL pipeline for file_id: {file_id}")
+        etl_processor.run_pipeline_with_schema(file_id, schema_map, db=db, storage=storage)
+        logging.info(f"ETL pipeline completed successfully for file_id: {file_id}")
     except Exception as e:
         logging.error(f"ETL pipeline failed for file_id {file_id}: {str(e)}", exc_info=True)
-        print(f"ETL pipeline failed: {e}")
 
+    logging.info(f"Schema confirmation completed for file_id: {file_id}")
     return {
         "file_id": file_id,
         "status": FileStatus.SCHEMA_CONFIRMED,
         "schema": clean_schema
     }
-    logging.info(f"Schema confirmation completed for file_id: {file_id}")
-    return result

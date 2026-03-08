@@ -1,4 +1,5 @@
 from typing import Generator, Any, Optional
+from contextlib import contextmanager
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from .database import SessionLocal, Base, reflect_db, run_migrations
@@ -55,6 +56,25 @@ def get_db() -> Generator[Session, None, None]:
     finally:
         db.close()
 
+@contextmanager
+def get_db_context():
+    """
+    Context manager version of get_db for use in Celery tasks or scripts.
+    
+    Usage:
+        with get_db_context() as db:
+            crud.get_items_by_field(db, ...)
+    """
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
 def get_model_class(table_name: str) -> Any:
     if table_name in HIDDEN_TABLES:
         raise HTTPException(status_code=403, detail=f"Access to table '{table_name}' is restricted.")
@@ -63,15 +83,9 @@ def get_model_class(table_name: str) -> Any:
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found.")
     return model_class
 
-_storage_instance: Optional[StorageProvider] = None
-
-def init_storage_provider(provider: StorageProvider) -> None:
-    global _storage_instance
-    _storage_instance = provider
-
 def get_storage_provider() -> StorageProvider:
     if _storage_instance is None:
-        raise RuntimeError("Storage provider not initialized. Call init_storage_provider() first.")
+        raise RuntimeError("Storage provider not initialized. Call init_app_services() first.")
     return _storage_instance
 
 def get_internal_model_class(table_name: str) -> Any:
@@ -86,18 +100,3 @@ def get_internal_model_class(table_name: str) -> Any:
             detail=f"Configuration error: '{table_name}' table not found. Ensure reflect_db() was called."
         )
     return model_class
-
-def get_db_context() -> Generator[Session, None, None]:
-    """
-    Context manager version of get_db for use in background tasks or scripts.
-    """
-    db = SessionLocal()
-    try:
-        yield db
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
-

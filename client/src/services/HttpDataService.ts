@@ -6,6 +6,22 @@ import type {
   PaginatedResponse,
   TableSchemaResponse,
 } from '@/types';
+
+type ValidateSchemaField = {
+  name?: string;
+  type?: string;
+};
+
+export type ValidateSchemaResponse = {
+  file_id?: string;
+  columns?: ValidateSchemaField[];
+};
+
+export type FileRegistryUpdate = {
+  status?: string;
+  object_key?: string;
+  file_schema?: unknown;
+};
 import type { IDataService, AuthProvider } from './interfaces';
 import { HttpClient } from './HttpClient';
 
@@ -33,6 +49,34 @@ export class HttpDataService implements IDataService {
     return this.httpClient.get<{ tables: TableMetadata[] }>('tables_with_metadata', {
       cache: 'no-store',
     });
+  }
+
+  async validateSchema(fileId: string): Promise<ValidateSchemaResponse> {
+    await this.setAuthHeader();
+    const query = new URLSearchParams({ file_id: fileId });
+    return this.httpClient.post<ValidateSchemaResponse>(`validate_schema?${query}`);
+  }
+
+  async updateFileRegistry(
+    fileId: string,
+    update: FileRegistryUpdate
+  ): Promise<{ file_id: string; updated_fields: FileRegistryUpdate }> {
+    await this.setAuthHeader();
+    return this.httpClient.patch<{
+      file_id: string;
+      updated_fields: FileRegistryUpdate;
+    }>(`files/${encodeURIComponent(fileId)}`, update);
+  }
+
+  async processFile(
+    fileId: string,
+    proposedSchema: Record<string, string>
+  ): Promise<{ file_id: string; status: string }> {
+    await this.setAuthHeader();
+    return this.httpClient.post<{ file_id: string; status: string }>(
+      `files/${encodeURIComponent(fileId)}/process`,
+      { proposed_schema: proposedSchema }
+    );
   }
 
   async getTableSchema(tableName: string): Promise<TableSchemaResponse> {

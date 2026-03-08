@@ -1,6 +1,6 @@
 from celery import Celery
 from services.etl_processor import process_file_task
-from typing import Literal, Union
+from typing import Union
 import core.config as config
 
 from core.deps import get_db_context, get_storage_provider, init_app_services
@@ -30,7 +30,7 @@ def notify_frontend(event: dict) -> None:
 
 def update_file_status(file_id: str, status: Union[FileStatus, str], error_message: str = None):
     """Update file status and error tracking in the registry database."""
-    with next(get_db_context()) as db:
+    with get_db_context() as db:
         update_data = {"status": status}
         if error_message:
             update_data["error_message"] = error_message
@@ -53,7 +53,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
 
     try:
         # Get object key from registry
-        with next(get_db_context()) as db:
+        with get_db_context() as db:
             records = crud.get_items_by_field(
                 db=db,
                 model_class=Base.classes.file_registry,
@@ -69,7 +69,6 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
         file_path = storage_provider.get_file_path(object_key)
         
         if not file_path:
-             # In a real S3 scenario, the provider might download it to a temp path here
              raise FileNotFoundError(f"Could not resolve path for {object_key}")
 
         # Run ETL logic
@@ -83,13 +82,11 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
             storage_provider.delete_file(object_key)
             
             # Delete the local temp download to save worker disk space
-            # Check if it's in the temp directory before deleting for safety
             if "/tmp/thi-storage" in str(file_path) and file_path.exists():
                 file_path.unlink()
                 logging.info(f"Cleaned up local file: {file_path}")
                 
         except Exception as cleanup_error:
-            # We don't fail the job if cleanup fails, just log it.
             logging.warning(f"Cleanup failed for {file_id}: {cleanup_error}")
 
         reflect.refresh_warehouse()

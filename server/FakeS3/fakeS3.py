@@ -18,6 +18,12 @@ class FakeS3(StorageProvider):
         return True
 
     def get_file_path(self, object_key: str) -> Optional[Path]:
+        # 1) Uploaded files written by the API (e.g. "uploads/<uuid>-file.csv")
+        file_path = Path.cwd() / object_key
+        if file_path.exists():
+            return file_path
+
+        # 2) Fixture files used by tests
         file_path = self.base_path / object_key
         if file_path.exists():
             return file_path
