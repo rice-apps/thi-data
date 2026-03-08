@@ -8,6 +8,12 @@ from core.database import Base
 from core.enums import FileStatus
 import crud
 import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s:%(lineno)d - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 import psycopg2
 import json
 import requests as http_requests
@@ -42,10 +48,10 @@ def _refresh_api_server(max_retries: int = 2) -> None:
         try:
             resp = http_requests.post(url, timeout=10)
             resp.raise_for_status()
-            logging.info(f"API server schema refresh succeeded (attempt {attempt + 1})")
+            logger.info(f"API server schema refresh succeeded (attempt {attempt + 1})")
             return
         except Exception as e:
-            logging.warning(f"API server refresh attempt {attempt + 1} failed: {e}")
+            logger.warning(f"API server refresh attempt {attempt + 1} failed: {e}")
             if attempt == max_retries - 1:
                 raise RuntimeError(
                     f"API server refresh failed after {max_retries} attempts: {e}"
@@ -72,7 +78,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
     """
     Celery task to process a patient data file.
     """
-    logging.info(f"Starting processing for file_id: {file_id}")
+    logger.info(f"Starting processing for file_id: {file_id}")
     update_file_status(file_id, FileStatus.PROCESSING)
 
     try:
@@ -108,10 +114,10 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
             # Delete the local temp download to save worker disk space
             if "/tmp/thi-storage" in str(file_path) and file_path.exists():
                 file_path.unlink()
-                logging.info(f"Cleaned up local file: {file_path}")
+                logger.info(f"Cleaned up local file: {file_path}")
                 
         except Exception as cleanup_error:
-            logging.warning(f"Cleanup failed for {file_id}: {cleanup_error}")
+            logger.warning(f"Cleanup failed for {file_id}: {cleanup_error}")
 
         # Refresh API server schema BEFORE notifying frontend.
         # This ensures the new tables are visible when the frontend navigates.
@@ -130,7 +136,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
         }
 
     except Exception as e:
-        logging.error(f"Task failed for file_id {file_id}: {e}")
+        logger.error(f"Task failed for file_id {file_id}: {e}")
         update_file_status(file_id, FileStatus.FAILED, error_message=str(e))
         try:
             notify_frontend({

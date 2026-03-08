@@ -72,10 +72,10 @@ class TestAdvisoryLock:
     @patch("core.database.engine")
     @patch("core.database.create_sadlock")
     @patch("core.database.Base")
-    def test_refresh_succeeds_even_if_reflection_fails(
+    def test_refresh_returns_error_when_reflection_fails(
         self, mock_base, mock_create_sadlock, mock_engine
     ):
-        """reflect_db swallows reflection errors; the endpoint still returns success."""
+        """reflect_db re-raises reflection errors; the endpoint returns 400."""
         from main import app
 
         mock_conn = MagicMock()
@@ -89,11 +89,10 @@ class TestAdvisoryLock:
 
         client = TestClient(app)
         r = client.post("/api/refresh")
-        assert r.status_code == 200
-        data = r.json()
-        assert data["status"] == "success"
-        assert data["message"] == "Database refreshed successfully."
+        assert r.status_code == 400
+        assert "Failed to connect" in r.json()["detail"]
 
+        # Lock must still be released even on failure
         mock_lock.__enter__.assert_called_once()
         mock_lock.__exit__.assert_called_once()
 
@@ -267,11 +266,11 @@ class TestLockReleaseOnFailure:
         mock_lock.__exit__ = lambda _self, *_args: real_lock.release()
         mock_create_sadlock.return_value = mock_lock
 
-        # First call: fails
+        # First call: fails but releases the lock
         mock_base.prepare.side_effect = SQLAlchemyError("temporary failure")
         client1 = TestClient(app)
         r1 = client1.post("/api/refresh")
-        assert r1.status_code == 200
+        assert r1.status_code == 400
 
         # Second call: succeeds
         mock_base.prepare.side_effect = None

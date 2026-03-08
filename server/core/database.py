@@ -75,3 +75,4 @@ def reflect_db():
         logger.info(f"Tables reflected successfully: {list(Base.classes.keys())}")
     except Exception as e:
         logger.error(f"Error reflecting database: {e}")
+        raise

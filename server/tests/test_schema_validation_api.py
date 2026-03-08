@@ -162,10 +162,10 @@ class TestSchemaConfirmEndpoint:
 
         # Mock crud to return a file record and accept updates
         with patch("api.schema.crud") as mock_crud, \
-             patch("api.schema.Base") as mock_base, \
+             patch("api.schema.get_file_registry_model") as mock_get_model, \
              patch("api.schema.etl_processor") as mock_etl:
 
-            mock_base.classes.get.return_value = MagicMock()
+            mock_get_model.return_value = MagicMock()
             mock_crud.get_items_by_field.return_value = [MagicMock()]
             mock_crud.update_item_by_field.return_value = 1
 
@@ -208,8 +208,8 @@ class TestSchemaConfirmEndpoint:
         client = TestClient(app)
 
         with patch("api.schema.crud") as mock_crud, \
-             patch("api.schema.Base") as mock_base:
-            mock_base.classes.get.return_value = MagicMock()
+             patch("api.schema.get_file_registry_model") as mock_get_model:
+            mock_get_model.return_value = MagicMock()
             mock_crud.get_items_by_field.return_value = []  # No file found
 
             payload = {"columns": [{"name": "age", "type": "INTEGER"}]}
@@ -249,11 +249,11 @@ class TestProcessFileEndpoint:
         client = TestClient(app)
 
         with patch("api.files.crud") as mock_crud, \
-             patch("api.files.Base") as mock_base, \
+             patch("api.files.get_file_registry_model") as mock_get_model, \
              patch("api.files.process_file_task") as mock_process:
 
             mock_model = MagicMock()
-            mock_base.classes.get.return_value = mock_model
+            mock_get_model.return_value = mock_model
             mock_record = MagicMock()
             mock_record.object_key = "uploads/test.csv"
             mock_crud.get_items_by_field.return_value = [mock_record]
@@ -289,8 +289,8 @@ class TestProcessFileEndpoint:
         client = TestClient(app)
 
         with patch("api.files.crud") as mock_crud, \
-             patch("api.files.Base") as mock_base:
-            mock_base.classes.get.return_value = MagicMock()
+             patch("api.files.get_file_registry_model") as mock_get_model:
+            mock_get_model.return_value = MagicMock()
             mock_crud.get_items_by_field.return_value = []
 
             payload = {"proposed_schema": {"age": "INTEGER"}}
@@ -321,10 +321,10 @@ class TestProcessFileEndpoint:
         client = TestClient(app)
 
         with patch("api.files.crud") as mock_crud, \
-             patch("api.files.Base") as mock_base, \
+             patch("api.files.get_file_registry_model") as mock_get_model, \
              patch("api.files.process_file_task") as mock_process:
 
-            mock_base.classes.get.return_value = MagicMock()
+            mock_get_model.return_value = MagicMock()
             mock_record = MagicMock()
             mock_record.object_key = "uploads/test.csv"
             mock_crud.get_items_by_field.return_value = [mock_record]
@@ -376,9 +376,9 @@ class TestValidateSchemaEndpoint:
         client = TestClient(app)
 
         with patch("api.validation.crud") as mock_crud, \
-             patch("api.validation.Base") as mock_base:
+             patch("api.validation.get_file_registry_model") as mock_get_model:
 
-            mock_base.classes.get.return_value = MagicMock()
+            mock_get_model.return_value = MagicMock()
             mock_record = MagicMock()
             mock_record.object_key = "uploads/test.csv"
             mock_crud.get_items_by_field.return_value = [mock_record]
@@ -422,8 +422,8 @@ class TestValidateSchemaEndpoint:
         client = TestClient(app)
 
         with patch("api.validation.crud") as mock_crud, \
-             patch("api.validation.Base") as mock_base:
-            mock_base.classes.get.return_value = MagicMock()
+             patch("api.validation.get_file_registry_model") as mock_get_model:
+            mock_get_model.return_value = MagicMock()
             mock_crud.get_items_by_field.return_value = []
 
             response = client.post("/api/validate_schema", params={"file_id": "missing"})

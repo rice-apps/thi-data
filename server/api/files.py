@@ -7,11 +7,10 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 import logging
 
-from core.deps import get_db, get_storage_provider
+from core.deps import get_db, get_storage_provider, get_file_registry_model
 from core.enums import FileStatus
 import crud
 from core.storage import StorageProvider
-from core.database import Base
 from services.etl_processor import process_file_task
 
 router = APIRouter(tags=["files"])
@@ -19,12 +18,6 @@ router = APIRouter(tags=["files"])
 logger = logging.getLogger(__name__)
 
 
-def _get_file_registry_model():
-    """Helper: get the reflected file_registry model or raise 500."""
-    model = Base.classes.get("file_registry")
-    if not model:
-        raise HTTPException(status_code=500, detail="file_registry table not reflected")
-    return model
 
 
 class FileUpdate(BaseModel):
@@ -49,7 +42,7 @@ async def upload_file(
         if not uploaded:
             raise RuntimeError("StorageProvider.upload_file returned False")
 
-        file_registry_model = _get_file_registry_model()
+        file_registry_model = get_file_registry_model()
         crud.create_item(
             db=db,
             model_class=file_registry_model,
@@ -87,7 +80,7 @@ def delete_file(
     db: Session = Depends(get_db),
     storage_provider: StorageProvider = Depends(get_storage_provider),
 ):
-    file_registry_model = _get_file_registry_model()
+    file_registry_model = get_file_registry_model()
 
     file_records = crud.get_items_by_field(
         db=db,
@@ -120,7 +113,7 @@ def update_file_registry(
     update: FileUpdate,
     db: Session = Depends(get_db),
 ):
-    file_registry_model = _get_file_registry_model()
+    file_registry_model = get_file_registry_model()
 
     update_data = update.dict(exclude_unset=True)
     if not update_data:
@@ -150,7 +143,7 @@ def process_file(
     storage_provider: StorageProvider = Depends(get_storage_provider),
 ):
     """Synchronous ETL: validate + split + load using the user-confirmed schema."""
-    file_registry_model = _get_file_registry_model()
+    file_registry_model = get_file_registry_model()
 
     file_records = crud.get_items_by_field(
         db=db,

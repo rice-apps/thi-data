@@ -88,6 +88,10 @@ def get_storage_provider() -> StorageProvider:
         raise RuntimeError("Storage provider not initialized. Call init_app_services() first.")
     return _storage_instance
 
+def get_file_registry_model() -> Any:
+    """Get the reflected file_registry model. Centralized to avoid scattered string lookups."""
+    return get_internal_model_class("file_registry")
+
 def get_internal_model_class(table_name: str) -> Any:
     """
     Get model class for internal/system tables (e.g., corrupted_rows, metadata_*).

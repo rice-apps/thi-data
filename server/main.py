@@ -5,6 +5,13 @@ from core.deps import init_app_services
 from api import metadata, tables, rows, reflect, validation, corrupted_rows, files, schema, events
 import core.config as config
 from celery_task import process_patient_file
+import logging
+
+# Centralized root logger config — all getLogger(__name__) loggers inherit this
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s:%(lineno)d - %(levelname)s - %(message)s",
+)
 
 origins = [
     config.settings.ORIGIN_URL
