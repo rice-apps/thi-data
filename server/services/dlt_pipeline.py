@@ -2,7 +2,6 @@ import dlt
 from dlt.destinations import postgres
 
 from core.config import settings
-from core.config import settings
 import logging
 
 logging.basicConfig(

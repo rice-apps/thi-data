@@ -53,7 +53,7 @@ def setup_file_registry():
 def test_update_file_registry(setup_file_registry):
     file_id, _ = setup_file_registry
     payload = {"status": "PROCESSED"}
-    r = requests.patch(f"{API_URL}/files/{file_id}", json=payload)
+    r = requests.patch(f"{API_URL}/api/files/{file_id}", json=payload)
 
     assert r.status_code == 200
     data = r.json()
@@ -62,7 +62,7 @@ def test_update_file_registry(setup_file_registry):
 
 def test_delete_file_registry(setup_file_registry):
     file_id, _ = setup_file_registry
-    r = requests.delete(f"{API_URL}/files/", params={"file_id": file_id})
+    r = requests.delete(f"{API_URL}/api/files", params={"file_id": file_id})
 
     assert r.status_code == 200
     data = r.json()
@@ -84,7 +84,7 @@ def test_upload_file():
     try:
         with open(test_file_path, "rb") as f:
             files = {"file": ( "test_file.txt", f, "text/plain")}
-            r = requests.post(f"{API_URL}/files/upload", files=files)
+            r = requests.post(f"{API_URL}/api/files/upload", files=files)
 
         if r.status_code != 200:
             print(f"DEBUG: upload failed with {r.status_code}: {r.text}")

@@ -157,14 +157,18 @@ class TestPipelineInvocation:
     internally. These tests verify that load_to_postgres creates the
     pipeline with the correct settings and calls run (not raw INSERTs)."""
 
+    @patch("services.dlt_pipeline.postgres")
     @patch("services.dlt_pipeline.settings")
     @patch("services.dlt_pipeline.dlt")
     def test_pipeline_created_with_correct_settings(
-        self, mock_dlt, mock_settings, real_dlt_pipeline, duckdb_con
+        self, mock_dlt, mock_settings, mock_postgres, real_dlt_pipeline, duckdb_con
     ):
         mock_settings.DLT_DESTINATION = "postgres"
         mock_settings.DLT_DATASET = "clinical_data"
         mock_settings.DLT_CREDENTIALS = "postgresql://user:pass@host/db"
+
+        mock_postgres_dest = MagicMock()
+        mock_postgres.return_value = mock_postgres_dest
 
         seed_clean_and_corrupted(duckdb_con, [("A", "1")], [])
 
@@ -174,11 +178,13 @@ class TestPipelineInvocation:
 
         real_dlt_pipeline.load_to_postgres(duckdb_con)
 
+        mock_postgres.assert_called_once_with(credentials="postgresql://user:pass@host/db")
+
+        # Pipeline is created with the postgres destination object
         mock_dlt.pipeline.assert_called_once_with(
             pipeline_name="duckdb_to_postgres",
-            destination="postgres",
+            destination=mock_postgres_dest,
             dataset_name="clinical_data",
-            credentials="postgresql://user:pass@host/db",
         )
 
     @patch("services.dlt_pipeline.dlt")
@@ -276,15 +282,20 @@ class TestNetworkFailurePersistence:
     ):
         """When process_file_task raises a connection error, the Celery
         task should update status to FAILED and re-raise."""
+        from contextlib import contextmanager
         from celery_task import process_patient_file
 
-        # Mock DB context to return a file registry record
+        # Mock DB context as a proper @contextmanager
         mock_db = MagicMock()
         mock_record = MagicMock()
         mock_record.object_key = "uploads/abc-test.csv"
-        mock_db.__enter__ = MagicMock(return_value=mock_db)
-        mock_db.__exit__ = MagicMock(return_value=False)
-        mock_get_db_ctx.return_value = iter([mock_db])
+
+        @contextmanager
+        def fake_db_context():
+            yield mock_db
+
+        mock_get_db_ctx.side_effect = lambda: fake_db_context().__enter__() and None or fake_db_context()
+        mock_get_db_ctx.return_value = fake_db_context()
 
         with patch("celery_task.crud") as mock_crud:
             mock_crud.get_items_by_field.return_value = [mock_record]
@@ -299,7 +310,6 @@ class TestNetworkFailurePersistence:
             )
 
             # Call the underlying run method directly to bypass autoretry.
-            # bind=True means _orig_run is already bound to the task instance.
             with pytest.raises(ConnectionError, match="timed out"):
                 process_patient_file._orig_run(
                     "file-123", {"age": "INTEGER"}
@@ -322,14 +332,18 @@ class TestNetworkFailurePersistence:
         mock_get_storage,
     ):
         """The status transitions should be PROCESSING -> FAILED on error."""
+        from contextlib import contextmanager
         from celery_task import process_patient_file
 
         mock_db = MagicMock()
         mock_record = MagicMock()
         mock_record.object_key = "uploads/abc.csv"
-        mock_db.__enter__ = MagicMock(return_value=mock_db)
-        mock_db.__exit__ = MagicMock(return_value=False)
-        mock_get_db_ctx.return_value = iter([mock_db])
+
+        @contextmanager
+        def fake_db_context():
+            yield mock_db
+
+        mock_get_db_ctx.return_value = fake_db_context()
 
         with patch("celery_task.crud") as mock_crud:
             mock_crud.get_items_by_field.return_value = [mock_record]

@@ -8,7 +8,6 @@ import crud
 from frictionless import describe
 import tempfile
 import os
-from core.supabase import supabase
 import logging
 
 router = APIRouter()

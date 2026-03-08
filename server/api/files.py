@@ -7,7 +7,6 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 import logging
 
-from core.supabase import get_supabase_client
 from core.deps import get_db, get_storage_provider
 from core.enums import FileStatus
 import crud
@@ -45,24 +44,10 @@ async def upload_file(
     logger.info("Starting upload: %s  file_id=%s", file.filename, file_id)
 
     try:
-        # Try Supabase storage first
-        uploaded_to_supabase = False
-        try:
-            client = get_supabase_client()
-            client.storage.from_("files").upload(
-                object_key,
-                content,
-                {"content-type": file.content_type or "application/octet-stream"},
-            )
-            uploaded_to_supabase = True
-        except Exception:
-            uploaded_to_supabase = False
-
-        # Local-dev fallback: write to disk so later steps can read the file
-        if not uploaded_to_supabase:
-            local_path = Path.cwd() / object_key
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            local_path.write_bytes(content)
+        # Upload via the configured StorageProvider (S3/SeaweedFS or FakeS3)
+        uploaded = storage_provider.upload_file(object_key, content)
+        if not uploaded:
+            raise RuntimeError("StorageProvider.upload_file returned False")
 
         file_registry_model = _get_file_registry_model()
         crud.create_item(
@@ -90,20 +75,17 @@ async def upload_file(
 
 
 @router.get("/api/files")
-def list_files():
-    res = (
-        get_supabase_client()
-        .table("storage.objects")
-        .select("id, name, bucket_id, created_at, metadata")
-        .eq("bucket_id", "files")
-        .execute()
-    )
-    return res.data
+def list_files(
+    storage_provider: StorageProvider = Depends(get_storage_provider),
+):
+    """List files from the configured storage provider."""
+    return storage_provider.list_files(prefix="uploads/")
 
 @router.delete("/api/files")
 def delete_file(
     file_id: str,
     db: Session = Depends(get_db),
+    storage_provider: StorageProvider = Depends(get_storage_provider),
 ):
     file_registry_model = _get_file_registry_model()
 
@@ -119,16 +101,8 @@ def delete_file(
     record = file_records[0]
     object_key = record.object_key
 
-    # Try Supabase removal; ignore errors (file may be local-only)
-    try:
-        get_supabase_client().storage.from_("files").remove([object_key])
-    except Exception:
-        pass
-
-    # Also remove local copy if it exists
-    local_path = Path.cwd() / object_key
-    if local_path.exists():
-        local_path.unlink()
+    # Remove from storage provider
+    storage_provider.delete_file(object_key)
 
     crud.delete_item_by_field(
         db=db,
@@ -220,5 +194,3 @@ def process_file(
             update_data={"status": FileStatus.FAILED},
         )
         raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
-
-    return {"file_id": file_id, "status": "SUCCESS"}

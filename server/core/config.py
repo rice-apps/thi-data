@@ -20,10 +20,6 @@ class Settings(BaseModel):
     S3_BUCKET: str = os.getenv("S3_BUCKET", "thi-data")
     S3_REGION: str = os.getenv("S3_REGION", "us-east-1")
 
-    # Supabase (Legacy/Cloud option)
-    STORAGE_URL: str = os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")
-    STORAGE_SERVICE_KEY: str = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "")
-
     # Celery / RabbitMQ
     BROKER_URL: str = os.getenv("broker_url", "amqp://guest:guest@localhost:5672/")
 
