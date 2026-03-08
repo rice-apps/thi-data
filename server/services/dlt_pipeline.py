@@ -1,4 +1,6 @@
 import dlt
+from dlt.destinations import postgres
+
 from core.config import settings
 import logging
 
@@ -13,19 +15,24 @@ CLEAN_DATA_NAME = "clean_data"
 
 def load_to_postgres(con):
     logging.info("Starting DLT pipeline to load data to Postgres")
-    # Setup dlt pipeline using settings
     pipeline = dlt.pipeline(
         pipeline_name='duckdb_to_postgres',
-        destination=settings.DLT_DESTINATION,
+        destination=postgres(credentials=settings.DLT_CREDENTIALS),
         dataset_name=settings.DLT_DATASET,
-        credentials=settings.DLT_CREDENTIALS
     )
+
+    # Drop stale pending packages from previous failed runs
+    try:
+        pipeline.drop_pending_packages()
+    except Exception:
+        pass
+
     logging.info(f"DLT pipeline created: destination={settings.DLT_DESTINATION}, dataset={settings.DLT_DATASET}")
     
     # Stream clean data to data warehouse
     logging.info(f"Loading clean data from table: {CLEAN_DATA_NAME}")
-    arrow_table = con.table(f"{CLEAN_DATA_NAME}").arrow()
-    corrupted_table = con.table(f"{CORRUPTED_ROWS_NAME}").arrow()
+    arrow_table = con.table(f"{CLEAN_DATA_NAME}").arrow().read_all()
+    corrupted_table = con.table(f"{CORRUPTED_ROWS_NAME}").arrow().read_all()
     logging.debug(f"Arrow tables loaded - clean data rows: {len(arrow_table)}, corrupted rows: {len(corrupted_table)}")
 
     logging.info("Running pipeline for final_patient_records table")
