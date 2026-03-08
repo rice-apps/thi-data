@@ -6,10 +6,9 @@ Integration tests hit the live API (requires docker compose up).
 
 Test coverage:
   1. POST /api/validate_schema — schema inference from file
-  2. PATCH /api/schema/{file_id} — confirm schema + trigger ETL
-  3. POST /api/files/{file_id}/process — process with user-confirmed schema
-  4. DI verification — deps are injected, not created internally
-  5. End-to-end: upload → infer → confirm → process
+  2. POST /api/files/{file_id}/process — process with user-confirmed schema
+  3. DI verification — deps are injected, not created internally
+  4. End-to-end: upload → infer → save schema → process
 """
 
 import os
@@ -135,118 +134,28 @@ class TestValidateAndSplitEdgeCases:
 
 
 # ===========================================================================
-# 2. Unit Tests: Schema API endpoint (PATCH /api/schema/{file_id})
-# ===========================================================================
-
-class TestSchemaConfirmEndpoint:
-    """Test the confirm_schema endpoint with mocked deps."""
-
-    def test_confirm_schema_calls_etl_with_injected_deps(self):
-        """confirm_schema should pass db and storage to run_pipeline_with_schema."""
-        from fastapi.testclient import TestClient
-        from api.schema import router, confirm_schema
-        from fastapi import FastAPI
-        from core.deps import get_db, get_storage_provider
-
-        app = FastAPI()
-        app.include_router(router)
-
-        mock_db = MagicMock()
-        mock_storage = MagicMock()
-        mock_storage.get_file_path.return_value = "/tmp/some_path_that_is_mocked"
-
-        def override_get_db():
-            yield mock_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_storage_provider] = lambda: mock_storage
-
-        client = TestClient(app)
-
-        from core.deps import get_file_registry_repo
-
-        mock_repo = MagicMock()
-        mock_repo.get_by_field.return_value = [MagicMock()]
-        mock_repo.update_by_field.return_value = 1
-
-        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
-
-        payload = {
-            "columns": [
-                {"name": "age", "type": "INTEGER"},
-                {"name": "name", "type": "VARCHAR"},
-            ]
-        }
-
-        with patch("api.schema.run_etl") as mock_run_etl:
-            response = client.patch("/api/schema/test-file-123", json=payload)
-
-            assert response.status_code == 200
-            data = response.json()
-            assert data["file_id"] == "test-file-123"
-            assert data["status"] == FileStatus.SCHEMA_CONFIRMED
-
-            mock_run_etl.assert_called_once_with(
-                "/tmp/some_path_that_is_mocked",
-                {"age": "INTEGER", "name": "VARCHAR"}
-            )
-
-    def test_confirm_schema_returns_404_for_missing_file(self):
-        """Should return 404 if file_id not found in registry."""
-        from fastapi.testclient import TestClient
-        from api.schema import router
-        from fastapi import FastAPI
-        from core.deps import get_db, get_storage_provider
-
-        app = FastAPI()
-        app.include_router(router)
-
-        mock_db = MagicMock()
-        app.dependency_overrides[get_db] = lambda: (yield mock_db) or None
-        app.dependency_overrides[get_storage_provider] = lambda: MagicMock()
-
-        client = TestClient(app)
-
-        from core.deps import get_file_registry_repo
-
-        mock_repo = MagicMock()
-        mock_repo.get_by_field.return_value = []
-
-        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
-
-        payload = {"columns": [{"name": "age", "type": "INTEGER"}]}
-        response = client.patch("/api/schema/nonexistent-file", json=payload)
-
-        assert response.status_code == 404
-
-
-# ===========================================================================
-# 3. Unit Tests: Process file endpoint (POST /api/files/{file_id}/process)
+# 2. Unit Tests: Process file endpoint (POST /api/files/{file_id}/process)
 # ===========================================================================
 
 class TestProcessFileEndpoint:
     """Test the process_file endpoint with mocked deps."""
 
-    def test_process_file_success(self):
-        """Should call run_etl and update status to SUCCESS."""
+    def test_process_file_dispatches_celery_task(self):
+        """Should dispatch a Celery task and return immediately with PROCESSING status."""
         from fastapi.testclient import TestClient
         from api.files import router
         from fastapi import FastAPI
-        from core.deps import get_db, get_storage_provider
-        from pathlib import Path
+        from core.deps import get_db
 
         app = FastAPI()
         app.include_router(router)
 
         mock_db = MagicMock()
-        mock_storage = MagicMock()
-        mock_storage.get_file_path.return_value = Path("/tmp/test.csv")
 
         def override_get_db():
             yield mock_db
 
         app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_storage_provider] = lambda: mock_storage
 
         client = TestClient(app)
 
@@ -256,21 +165,26 @@ class TestProcessFileEndpoint:
         mock_record = MagicMock()
         mock_record.object_key = "uploads/test.csv"
         mock_repo.get_by_field.return_value = [mock_record]
-        mock_repo.update_by_field.return_value = 1
 
         app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
 
         payload = {"proposed_schema": {"age": "INTEGER", "name": "VARCHAR"}}
 
-        with patch("api.files.run_etl", return_value=0) as mock_run_etl:
+        mock_task = MagicMock()
+        mock_task.id = "celery-task-id-456"
+
+        with patch("api.files.process_patient_file") as mock_celery:
+            mock_celery.delay.return_value = mock_task
             response = client.post("/api/files/test-123/process", json=payload)
 
             assert response.status_code == 200
             data = response.json()
-            assert data["status"] == FileStatus.SUCCESS
+            assert data["status"] == "PROCESSING"
+            assert data["task_id"] == "celery-task-id-456"
+            assert data["file_id"] == "test-123"
 
-            mock_run_etl.assert_called_once_with(
-                str(Path("/tmp/test.csv")),
+            mock_celery.delay.assert_called_once_with(
+                "test-123",
                 {"age": "INTEGER", "name": "VARCHAR"}
             )
 
@@ -279,14 +193,13 @@ class TestProcessFileEndpoint:
         from fastapi.testclient import TestClient
         from api.files import router
         from fastapi import FastAPI
-        from core.deps import get_db, get_storage_provider
+        from core.deps import get_db
 
         app = FastAPI()
         app.include_router(router)
 
         mock_db = MagicMock()
         app.dependency_overrides[get_db] = lambda: (yield mock_db) or None
-        app.dependency_overrides[get_storage_provider] = lambda: MagicMock()
 
         client = TestClient(app)
 
@@ -300,54 +213,6 @@ class TestProcessFileEndpoint:
         payload = {"proposed_schema": {"age": "INTEGER"}}
         response = client.post("/api/files/missing/process", json=payload)
         assert response.status_code == 404
-
-    def test_process_file_etl_failure_sets_failed_status(self):
-        """If ETL raises, status should be set to FAILED and 500 returned."""
-        from fastapi.testclient import TestClient
-        from api.files import router
-        from fastapi import FastAPI
-        from core.deps import get_db, get_storage_provider
-        from pathlib import Path
-
-        app = FastAPI()
-        app.include_router(router)
-
-        mock_db = MagicMock()
-        mock_storage = MagicMock()
-        mock_storage.get_file_path.return_value = Path("/tmp/test.csv")
-
-        def override_get_db():
-            yield mock_db
-
-        app.dependency_overrides[get_db] = override_get_db
-        app.dependency_overrides[get_storage_provider] = lambda: mock_storage
-
-        client = TestClient(app)
-
-        from core.deps import get_file_registry_repo
-
-        mock_repo = MagicMock()
-        mock_record = MagicMock()
-        mock_record.object_key = "uploads/test.csv"
-        mock_repo.get_by_field.return_value = [mock_record]
-        mock_repo.update_by_field.return_value = 1
-
-        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
-
-        payload = {"proposed_schema": {"age": "INTEGER"}}
-
-        with patch("api.files.run_etl", side_effect=RuntimeError("DuckDB crashed")):
-            response = client.post("/api/files/test-fail/process", json=payload)
-
-            assert response.status_code == 500
-            assert "DuckDB crashed" in response.json()["detail"]
-
-            # Verify status was updated to FAILED
-            failed_calls = [
-                c for c in mock_repo.update_by_field.call_args_list
-                if c[1].get("update_data", {}).get("status") == FileStatus.FAILED
-            ]
-            assert len(failed_calls) >= 1
 
 
 # ===========================================================================
@@ -481,7 +346,7 @@ class TestDependencyInjection:
         """No server module should import from core.supabase."""
         import importlib
         import inspect as insp
-        api_modules = ["api.files", "api.schema", "api.validation", "api.metadata"]
+        api_modules = ["api.files", "api.validation", "api.metadata"]
         for module_name in api_modules:
             mod = importlib.import_module(module_name)
             source_file = insp.getfile(mod)
@@ -553,8 +418,8 @@ class TestSchemaValidationIntegration:
         Full integration test of the schema validation pipeline:
         1. Upload CSV (done by fixture)
         2. Infer schema via POST /api/validate_schema
-        3. Confirm schema via PATCH /api/schema/{file_id}
-        4. Verify status transitions
+        3. Save schema via PATCH /api/files/{file_id}
+        4. Queue processing via POST /api/files/{file_id}/process
         """
         file_id = uploaded_file
 
@@ -575,17 +440,265 @@ class TestSchemaValidationIntegration:
             "date": "DATE",
             "datetime": "TIMESTAMP",
         }
-        confirmed_columns = []
+        schema_map = {}
+        clean_schema = {"fields": []}
         for col in columns:
             duckdb_type = FRICTIONLESS_TO_DUCKDB.get(col["type"], "VARCHAR")
-            confirmed_columns.append({"name": col["name"], "type": duckdb_type})
+            schema_map[col["name"]] = duckdb_type
+            clean_schema["fields"].append({"name": col["name"], "type": duckdb_type})
 
-        # 3. Confirm schema
-        confirm_resp = requests.patch(
-            f"{API_URL}/api/schema/{file_id}",
-            json={"columns": confirmed_columns}
+        # 3. Save schema via PATCH /api/files/{file_id}
+        save_resp = requests.patch(
+            f"{API_URL}/api/files/{file_id}",
+            json={
+                "file_schema": clean_schema,
+                "status": FileStatus.SCHEMA_CONFIRMED,
+            }
         )
-        assert confirm_resp.status_code == 200, f"Schema confirm failed: {confirm_resp.text}"
-        confirm_data = confirm_resp.json()
-        assert confirm_data["file_id"] == file_id
-        assert confirm_data["status"] == FileStatus.SCHEMA_CONFIRMED
+        assert save_resp.status_code == 200, f"Schema save failed: {save_resp.text}"
+
+        # 4. Queue processing via POST /api/files/{file_id}/process
+        process_resp = requests.post(
+            f"{API_URL}/api/files/{file_id}/process",
+            json={"proposed_schema": schema_map}
+        )
+        assert process_resp.status_code == 200, f"Process failed: {process_resp.text}"
+        process_data = process_resp.json()
+        assert process_data["file_id"] == file_id
+        assert process_data["status"] == "PROCESSING"
+
+
+# ===========================================================================
+# 7. Structural checks: no sync ETL in endpoints
+# ===========================================================================
+
+class TestNoSyncETL:
+    """Verify sync ETL code has been removed from files.py."""
+
+    def test_files_py_does_not_import_run_etl(self):
+        """files.py should import celery_task, not etl_processor."""
+        import api.files as files_mod
+        import inspect
+        source = inspect.getsource(files_mod)
+        assert "run_etl" not in source
+        assert "etl_processor" not in source
+
+    def test_files_py_imports_celery_task(self):
+        import api.files as files_mod
+        import inspect
+        source = inspect.getsource(files_mod)
+        assert "from celery_task import process_patient_file" in source
+
+    def test_main_py_has_no_duplicate_process_endpoint(self):
+        """main.py should NOT define its own /process_file/ endpoint."""
+        import main as main_mod
+        import inspect
+        source = inspect.getsource(main_mod)
+        assert "process_file" not in source
+        assert "process_patient_file" not in source
+
+
+# ===========================================================================
+# 8. Sync endpoints should NOT call reflect_db
+# ===========================================================================
+
+class TestNoReflectInSyncEndpoints:
+    """Sync endpoints should NOT call reflect_db — Celery handles that."""
+
+    def test_files_process_does_not_call_reflect(self):
+        import inspect
+        from api.files import process_file
+        source = inspect.getsource(process_file)
+        assert "reflect_db" not in source
+
+
+# ===========================================================================
+# 8. Error message sanitization
+# ===========================================================================
+
+class TestErrorSanitization:
+    """Verify error messages don't leak technical details."""
+
+    def test_validate_schema_error_is_generic(self):
+        from fastapi.testclient import TestClient
+        from api.validation import router
+        from fastapi import FastAPI
+        from core.deps import get_db, get_storage_provider, get_file_registry_repo
+
+        app = FastAPI()
+        app.include_router(router)
+
+        mock_db = MagicMock()
+        def override_get_db():
+            yield mock_db
+        app.dependency_overrides[get_db] = override_get_db
+
+        mock_storage = MagicMock()
+        mock_storage.get_file_path.return_value = "/tmp/nonexistent.csv"
+        app.dependency_overrides[get_storage_provider] = lambda: mock_storage
+
+        mock_repo = MagicMock()
+        mock_record = MagicMock()
+        mock_record.object_key = "uploads/test.csv"
+        mock_repo.get_by_field.return_value = [mock_record]
+        mock_repo.update_by_field.return_value = 1
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        with patch("api.validation.infer_from_file", side_effect=Exception("UnicodeDecodeError at byte 0xFF")):
+            client = TestClient(app)
+            resp = client.post("/api/validate_schema", params={"file_id": "f1"})
+
+        assert resp.status_code == 500
+        detail = resp.json()["detail"]
+        assert "UnicodeDecodeError" not in detail
+        assert "0xFF" not in detail
+        assert "file format" in detail.lower()
+
+    def test_files_upload_error_is_generic(self):
+        from fastapi.testclient import TestClient
+        from api.files import router
+        from fastapi import FastAPI
+        from core.deps import get_db, get_storage_provider, get_file_registry_repo
+
+        app = FastAPI()
+        app.include_router(router)
+
+        mock_db = MagicMock()
+        def override_get_db():
+            yield mock_db
+        app.dependency_overrides[get_db] = override_get_db
+
+        mock_storage = MagicMock()
+        mock_storage.upload_file.side_effect = RuntimeError("S3 connection refused on port 9000")
+        app.dependency_overrides[get_storage_provider] = lambda: mock_storage
+        app.dependency_overrides[get_file_registry_repo] = lambda: MagicMock()
+
+        client = TestClient(app)
+        resp = client.post("/api/files/upload", files={"file": ("test.csv", b"a,b\n1,2", "text/csv")})
+
+        assert resp.status_code == 500
+        detail = resp.json()["detail"]
+        assert "S3" not in detail
+        assert "9000" not in detail
+        assert "connection refused" not in detail.lower()
+        assert "try again" in detail.lower()
+
+    def test_create_item_error_is_generic(self):
+        from fastapi.testclient import TestClient
+        from api.rows import router
+        from fastapi import FastAPI
+        from core.deps import get_db, get_model_class
+
+        app = FastAPI()
+        app.include_router(router)
+
+        mock_db = MagicMock()
+        def override_get_db():
+            yield mock_db
+        app.dependency_overrides[get_db] = override_get_db
+
+        mock_model = MagicMock()
+        mock_mapper = MagicMock()
+        mock_col = MagicMock()
+        mock_col.key = "name"
+        mock_mapper.column_attrs = [mock_col]
+        mock_mapper.primary_key = []
+
+        with patch("api.rows.inspect", return_value=mock_mapper):
+            with patch("api.rows.get_repository") as mock_get_repo:
+                mock_repo = MagicMock()
+                mock_repo.create.side_effect = Exception("UNIQUE constraint failed: patients.name")
+                mock_get_repo.return_value = mock_repo
+
+                app.dependency_overrides[get_model_class] = lambda table_name: mock_model
+                client = TestClient(app)
+                resp = client.post("/api/test_table", json={"name": "Alice"})
+
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert "UNIQUE constraint" not in detail
+        assert "input values" in detail.lower()
+
+    def test_match_items_error_is_generic(self):
+        from fastapi.testclient import TestClient
+        from api.rows import router
+        from fastapi import FastAPI
+        from core.deps import get_db, get_model_class
+
+        app = FastAPI()
+        app.include_router(router)
+
+        mock_db = MagicMock()
+        def override_get_db():
+            yield mock_db
+        app.dependency_overrides[get_db] = override_get_db
+
+        mock_model = MagicMock()
+
+        with patch("api.rows.get_repository") as mock_get_repo:
+            mock_repo = MagicMock()
+            mock_repo.filter_text.side_effect = Exception("column 'xyz' does not exist")
+            mock_get_repo.return_value = mock_repo
+
+            app.dependency_overrides[get_model_class] = lambda table_name: mock_model
+            client = TestClient(app)
+            resp = client.get("/api/test_table/search/xyz/foo")
+
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert "column" not in detail.lower()
+        assert "does not exist" not in detail.lower()
+        assert "query" in detail.lower()
+
+    def test_update_item_error_is_generic(self):
+        from fastapi.testclient import TestClient
+        from api.rows import router
+        from fastapi import FastAPI
+        from core.deps import get_db, get_model_class
+
+        app = FastAPI()
+        app.include_router(router)
+
+        mock_db = MagicMock()
+        def override_get_db():
+            yield mock_db
+        app.dependency_overrides[get_db] = override_get_db
+
+        mock_model = MagicMock()
+        mock_mapper = MagicMock()
+        mock_col = MagicMock()
+        mock_col.key = "name"
+        mock_mapper.column_attrs = [mock_col]
+        mock_mapper.primary_key = []
+
+        with patch("api.rows.inspect", return_value=mock_mapper):
+            with patch("api.rows.get_repository") as mock_get_repo:
+                mock_repo = MagicMock()
+                mock_item = MagicMock()
+                mock_repo.get_by_id.return_value = mock_item
+                mock_repo.update.side_effect = Exception("psycopg2.IntegrityError: duplicate key")
+                mock_get_repo.return_value = mock_repo
+
+                app.dependency_overrides[get_model_class] = lambda table_name: mock_model
+                client = TestClient(app)
+                resp = client.put("/api/test_table/1", json={"name": "Bob"})
+
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert "psycopg2" not in detail
+        assert "IntegrityError" not in detail
+        assert "input values" in detail.lower()
+
+
+# ===========================================================================
+# 11. match_items receives table_name
+# ===========================================================================
+
+class TestMatchItemsSignature:
+    """match_items function should accept table_name as a parameter."""
+
+    def test_match_items_has_table_name_param(self):
+        import inspect
+        from api.rows import match_items
+        sig = inspect.signature(match_items)
+        assert "table_name" in sig.parameters

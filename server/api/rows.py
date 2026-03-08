@@ -165,10 +165,11 @@ def create_item(
         return model_to_dict(new_item)
     except Exception as e:
         logger.error(f"Error creating item in table {table_name}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=400, detail=f"Error creating item: {e}")
+        raise HTTPException(status_code=400, detail="Could not create the row. Please check your input values.")
 
 @router.get("/api/{table_name}/search/{column}/{match}")
 def match_items(
+    table_name: str,
     column: str,
     match: str,
     skip: int = 0,
@@ -189,7 +190,7 @@ def match_items(
         }
     except Exception as e:
         logger.error(f"Error matching items in column {column}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=400, detail=f"Error matching items: {e}")
+        raise HTTPException(status_code=400, detail="Search failed. Please try a different query.")
 
 @router.get("/api/{table_name}/{item_id}")
 def get_one_item(
@@ -241,7 +242,7 @@ def update_item(
         return model_to_dict(new_item)
     except Exception as e:
         logger.error(f"Error updating item {item_id} in table {table_name}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=400, detail=f"Error updating item: {e}")
+        raise HTTPException(status_code=400, detail="Could not update the row. Please check your input values.")
 
 @router.delete("/api/{table_name}/{item_id}")
 def delete_item(

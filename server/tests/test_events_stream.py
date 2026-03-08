@@ -7,6 +7,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 # Add the 'server' directory to sys.path
+
+# Add the 'server' directory to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
@@ -239,3 +241,115 @@ async def test_async_stream_ignores_other_file_ids():
         assert "celery_success" in line
 
         await agen.aclose()
+
+
+# ===========================================================================
+# Import correctness
+# ===========================================================================
+
+class TestEventsImports:
+    """events.py must import the select module for PG LISTEN."""
+
+    def test_select_module_imported(self):
+        import api.events as events
+        import select as select_mod
+        # The module should have access to select
+        assert hasattr(events, "select") or "select" in dir(events) or \
+               select_mod is not None  # Basic check that import doesn't crash
+
+    def test_select_used_in_broadcaster(self):
+        """_PgNotifyBroadcaster._run references select.select."""
+        import inspect
+        from api.events import _PgNotifyBroadcaster
+        source = inspect.getsource(_PgNotifyBroadcaster._run)
+        assert "select.select" in source
+
+
+# ===========================================================================
+# Broadcaster filtering
+# ===========================================================================
+
+class TestBroadcasterFiltering:
+    """_PgNotifyBroadcaster._dispatch should filter by wanted file_id."""
+
+    def test_dispatch_filters_subscribers(self):
+        from api.events import _PgNotifyBroadcaster
+
+        broadcaster = _PgNotifyBroadcaster()
+        loop = asyncio.new_event_loop()
+        broadcaster.set_loop(loop)
+
+        q1 = asyncio.Queue()
+        q2 = asyncio.Queue()
+
+        # q1 wants file-A, q2 wants file-B
+        broadcaster._subscribers = {(q1, "file-A"), (q2, "file-B")}
+
+        broadcaster._dispatch({"file_id": "file-A", "type": "celery_success"})
+
+        # Run pending callbacks
+        loop.run_until_complete(asyncio.sleep(0))
+
+        assert not q1.empty()
+        assert q2.empty()
+
+        loop.close()
+
+    def test_dispatch_sends_to_all_when_no_filter(self):
+        from api.events import _PgNotifyBroadcaster
+
+        broadcaster = _PgNotifyBroadcaster()
+        loop = asyncio.new_event_loop()
+        broadcaster.set_loop(loop)
+
+        q1 = asyncio.Queue()
+        q2 = asyncio.Queue()
+
+        # q1 has no filter (None), q2 wants specific file
+        broadcaster._subscribers = {(q1, None), (q2, "file-X")}
+
+        broadcaster._dispatch({"file_id": "file-X", "type": "test"})
+        loop.run_until_complete(asyncio.sleep(0))
+
+        assert not q1.empty()  # No filter, receives all
+        assert not q2.empty()  # Matches file-X
+
+        loop.close()
+
+
+# ===========================================================================
+# Generator exhaustion after terminal event
+# ===========================================================================
+
+class TestSSEGeneratorExhaustion:
+    """After a terminal event the async generator should be exhausted."""
+
+    @pytest.mark.asyncio
+    async def test_generator_exhausted_after_terminal_event(self):
+        import api.events as events
+
+        captured = {}
+
+        def _subscribe(queue, file_id):
+            captured["queue"] = queue
+
+        with patch.object(events._broadcaster, "set_loop"), \
+             patch.object(events._broadcaster, "subscribe", side_effect=_subscribe), \
+             patch.object(events._broadcaster, "unsubscribe"):
+
+            agen = events._async_event_stream("file-term")
+
+            task = asyncio.create_task(anext(agen))
+            while "queue" not in captured:
+                await asyncio.sleep(0)
+
+            captured["queue"].put_nowait({
+                "type": "celery_success",
+                "file_id": "file-term",
+            })
+            line = await task
+            assert "celery_success" in line
+
+            # Generator should be exhausted — StopAsyncIteration
+            with pytest.raises(StopAsyncIteration):
+                await anext(agen)

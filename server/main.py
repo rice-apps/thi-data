@@ -1,10 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from core.deps import init_app_services
-from api import metadata, tables, rows, reflect, validation, corrupted_rows, files, schema, events
+from api import metadata, tables, rows, reflect, validation, corrupted_rows, files, events
 import core.config as config
-from celery_task import process_patient_file
 import logging
 
 # Centralized root logger config — all getLogger(__name__) loggers inherit this
@@ -39,17 +38,6 @@ app.add_middleware(
 def read_root():
     return {"Hello": "World"}
 
-@app.post("/process_file/")
-def process_file(file_id: str, proposed_schema: dict):
-    """
-    Producer endpoint: Pushes a task to the RabbitMQ queue.
-    """
-    try:
-        task = process_patient_file.delay(file_id, proposed_schema) 
-        return {"task_id": task.id, "file_id": file_id, "message": f"Processing started for file: {file_id}"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing file: {e}")
-
 # Include Routers
 app.include_router(corrupted_rows.router)
 app.include_router(validation.router)
@@ -59,4 +47,3 @@ app.include_router(events.router)
 app.include_router(tables.router)
 app.include_router(rows.router)
 app.include_router(files.router)
-app.include_router(schema.router)

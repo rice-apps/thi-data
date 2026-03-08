@@ -77,4 +77,4 @@ def validate_schema(
             logger.error(f"Failed to update file status for file_id {file_id}")
             pass
 
-        raise HTTPException(status_code = 500, detail=f"Schema inference failed: {e}")
+        raise HTTPException(status_code=500, detail="Could not detect columns automatically. Please check the file format.")

@@ -221,20 +221,13 @@ def resolve_corrupted_row(
     
     logger.info(f"Found {len(corrupted_entries)} corrupted entries to remove for row_id: {row_id}")
 
-    try:
-        
-        for entry in corrupted_entries:
-            logger.debug(f"Deleting corrupted entry with id: {entry.id}")
-            db.delete(entry)
-            
-        db.commit()
-        db.refresh(record)
-        logger.info(f"Transaction committed successfully - row healed and {len(corrupted_entries)} error log(s) cleared")
-        
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Database transaction failed during resolution: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Database Transaction Failed: {str(e)}")
+    for entry in corrupted_entries:
+        logger.debug(f"Deleting corrupted entry with id: {entry.id}")
+        db.delete(entry)
+
+    db.flush()
+    db.refresh(record)
+    logger.info(f"Row healed and {len(corrupted_entries)} error log(s) cleared")
 
     result = {
         "status": "success",

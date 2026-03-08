@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useServices } from '@/services';
+import { useProcessing } from '@/components/ProcessingProvider';
 
 type EditableSchemaField = {
   originalName: string;
@@ -47,7 +48,8 @@ const frictionlessTypeToDuckdbType = (frictionlessType?: string): string => {
 export default function SchemaEditorPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { dataService, authService } = useServices();
+  const { dataService } = useServices();
+  const { startProcessing } = useProcessing();
 
   const fileId = searchParams?.get('file_id') ?? '';
   const fileName = searchParams?.get('file_name') ?? 'Uploaded file';
@@ -141,6 +143,8 @@ export default function SchemaEditorPage() {
       }
       await dataService.processFile(fileId, proposedSchema);
 
+      // Start global SSE monitoring — toast will appear on any page
+      startProcessing(fileId);
       router.push('/homescreen');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save schema');

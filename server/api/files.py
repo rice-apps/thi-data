@@ -2,16 +2,15 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, Dict
 import uuid
-from pathlib import Path
 
 from sqlalchemy.orm import Session
 import logging
 
 from core.deps import get_db, get_storage_provider, get_file_registry_repo
 from core.enums import FileStatus
-from crud.base import BaseRepository, model_to_dict
+from crud.base import BaseRepository
 from core.storage import StorageProvider
-from services.etl_processor import process_file as run_etl
+from celery_task import process_patient_file
 
 router = APIRouter(tags=["files"])
 
@@ -59,7 +58,7 @@ async def upload_file(
         raise
     except Exception as e:
         logger.error("Upload failed for %s: %s", file.filename, e, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"File upload failed: {e}")
+        raise HTTPException(status_code=500, detail="File upload failed. Please try again.")
 
 
 @router.get("/api/files")
@@ -130,10 +129,9 @@ def process_file(
     file_id: str,
     body: ProcessFileRequest,
     db: Session = Depends(get_db),
-    storage_provider: StorageProvider = Depends(get_storage_provider),
     repo: BaseRepository = Depends(get_file_registry_repo),
 ):
-    """Synchronous ETL: validate + split + load using the user-confirmed schema."""
+    """Queue async ETL via Celery using the user-confirmed schema."""
     file_records = repo.get_by_field(
         db=db,
         field_name="file_id",
@@ -142,33 +140,5 @@ def process_file(
     if not file_records:
         raise HTTPException(status_code=404, detail="File not found in registry")
 
-    record = file_records[0]
-    file_path = storage_provider.get_file_path(record.object_key)
-    if not file_path:
-        raise HTTPException(status_code=404, detail="File not found in storage")
-
-    try:
-        repo.update_by_field(
-            db=db,
-            search_field="file_id",
-            search_value=file_id,
-            update_data={"status": FileStatus.PROCESSING},
-        )
-
-        run_etl(str(file_path), body.proposed_schema)
-
-        repo.update_by_field(
-            db=db,
-            search_field="file_id",
-            search_value=file_id,
-            update_data={"status": FileStatus.SUCCESS},
-        )
-        return {"file_id": file_id, "status": FileStatus.SUCCESS}
-    except Exception as e:
-        repo.update_by_field(
-            db=db,
-            search_field="file_id",
-            search_value=file_id,
-            update_data={"status": FileStatus.FAILED},
-        )
-        raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
+    task = process_patient_file.delay(file_id, body.proposed_schema)
+    return {"file_id": file_id, "task_id": task.id, "status": "PROCESSING"}

@@ -1,5 +1,6 @@
 import json
 import asyncio
+import select
 import threading
 from typing import Optional, AsyncIterator
 
@@ -30,24 +31,19 @@ def _get_file_registry_status(file_id: str) -> Optional[dict]:
 
     Returns a dict with at least {file_id, status} or None if not found.
     """
-    conn = psycopg2.connect(settings.DLT_CREDENTIALS)
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT file_id::text, status, error_message, target_table_name FROM file_registry WHERE file_id = %s",
-                (file_id,),
-            )
-            row = cur.fetchone()
-            if not row:
-                return None
-            return {
-                "file_id": row[0],
-                "status": row[1],
-                "error_message": row[2],
-                "target_table_name": row[3],
-            }
-    finally:
-        conn.close()
+    from core.deps import get_db_context, get_file_registry_repo
+    repo = get_file_registry_repo()
+    with get_db_context() as db:
+        records = repo.get_by_field(db=db, field_name="file_id", value=file_id)
+        if not records:
+            return None
+        record = records[0]
+        return {
+            "file_id": str(record.file_id),
+            "status": record.status,
+            "error_message": getattr(record, "error_message", None),
+            "target_table_name": getattr(record, "target_table_name", None),
+        }
 
 
 def _terminal_payload_from_registry(registry_row: dict) -> dict:
@@ -169,6 +165,9 @@ async def _async_event_stream(file_id: Optional[str]) -> AsyncIterator[str]:
 
             event_type = payload.get("type")
             yield _format_sse(payload, event=event_type)
+
+            if event_type in ("celery_success", "celery_failed"):
+                return
     finally:
         _broadcaster.unsubscribe(queue, file_id)
 
