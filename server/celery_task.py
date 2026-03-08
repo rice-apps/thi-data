@@ -1,16 +1,16 @@
 from celery import Celery
 from services.etl_processor import process_file_task
 from typing import Union
-import core.config as config
 
+import core.config as config
 from core.deps import get_db_context, get_storage_provider, init_app_services
 from core.database import Base
 from core.enums import FileStatus
 import crud
 import logging
-import api.reflect as reflect
 import psycopg2
 import json
+import requests as http_requests
 
 # Standard service initialization for both API and Worker
 init_app_services()
@@ -27,6 +27,30 @@ def notify_frontend(event: dict) -> None:
             cur.execute("NOTIFY thi_events, %s;", (json.dumps(event),))
     finally:
         conn.close()
+
+
+def _refresh_api_server(max_retries: int = 2) -> None:
+    """Tell the API server to re-reflect the database schema.
+
+    The Celery worker and API server run in different containers, each
+    with their own in-memory Base.classes.  After ETL creates new tables
+    the API server must re-reflect so it can serve the new data.  We
+    achieve this with a simple HTTP POST.
+    """
+    url = f"{config.settings.API_SERVER_URL}/api/refresh"
+    for attempt in range(max_retries):
+        try:
+            resp = http_requests.post(url, timeout=10)
+            resp.raise_for_status()
+            logging.info(f"API server schema refresh succeeded (attempt {attempt + 1})")
+            return
+        except Exception as e:
+            logging.warning(f"API server refresh attempt {attempt + 1} failed: {e}")
+            if attempt == max_retries - 1:
+                raise RuntimeError(
+                    f"API server refresh failed after {max_retries} attempts: {e}"
+                )
+
 
 def update_file_status(file_id: str, status: Union[FileStatus, str], error_message: str = None):
     """Update file status and error tracking in the registry database."""
@@ -89,7 +113,9 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
         except Exception as cleanup_error:
             logging.warning(f"Cleanup failed for {file_id}: {cleanup_error}")
 
-        reflect.refresh_warehouse()
+        # Refresh API server schema BEFORE notifying frontend.
+        # This ensures the new tables are visible when the frontend navigates.
+        _refresh_api_server()
 
         notify_frontend({
                 "type": "celery_success",

@@ -1,8 +1,7 @@
 import json
 import asyncio
-import select
 import threading
-from typing import Iterator, Optional, AsyncIterator
+from typing import Optional, AsyncIterator
 
 import psycopg2
 from fastapi import APIRouter, Query
@@ -152,33 +151,6 @@ class _PgNotifyBroadcaster:
 _broadcaster = _PgNotifyBroadcaster()
 
 
-def _event_stream(file_id: Optional[str]) -> Iterator[str]:
-    conn = psycopg2.connect(settings.DLT_CREDENTIALS)
-    try:
-        conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
-        cur = conn.cursor()
-        cur.execute(f"LISTEN {PG_NOTIFY_CHANNEL};")
-
-        while True:
-            if select.select([conn], [], [], 15) == ([], [], []):
-                yield ": keep-alive\n\n"
-                continue
-
-            conn.poll()
-            while conn.notifies:
-                notify = conn.notifies.pop(0)
-                try:
-                    payload = json.loads(notify.payload)
-                except Exception:
-                    payload = {"type": "unknown", "raw": notify.payload}
-
-                if file_id and payload.get("file_id") != file_id:
-                    continue
-
-                event_type = payload.get("type")
-                yield _format_sse(payload, event=event_type)
-    finally:
-        conn.close()
 
 
 async def _async_event_stream(file_id: Optional[str]) -> AsyncIterator[str]:

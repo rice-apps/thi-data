@@ -26,6 +26,9 @@ class Settings(BaseModel):
     # CORS
     ORIGIN_URL: str = os.getenv("origin_url", "http://localhost:3000")
 
+    # Worker → API server communication (for schema refresh after ETL)
+    API_SERVER_URL: str = os.getenv("API_SERVER_URL", "http://backend:8000")
+
     # ETL & DLT Settings
     DLT_DESTINATION: str = os.getenv("DLT_DESTINATION", "postgres")
     DLT_DATASET: str = os.getenv("DLT_DATASET", "clinical_data")
