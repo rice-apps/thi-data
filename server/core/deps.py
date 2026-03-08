@@ -1,4 +1,4 @@
-from typing import Generator, Any, Optional
+from typing import Generator, Any, Optional, Dict
 from contextlib import contextmanager
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -8,8 +8,30 @@ from .s3_storage import S3StorageProvider
 from FakeS3.fakeS3 import FakeS3
 from .constants import HIDDEN_TABLES
 from .config import settings
+from crud.base import BaseRepository
 
 _storage_instance: Optional[StorageProvider] = None
+
+
+# --- Repository singletons (lazy-init, models available after reflect_db) ---
+_file_registry_repo: Optional[BaseRepository] = None
+
+def get_file_registry_repo() -> BaseRepository:
+    """Singleton file registry repository — model resolved after reflect_db()."""
+    global _file_registry_repo
+    if _file_registry_repo is None:
+        _file_registry_repo = BaseRepository(get_file_registry_model())
+    return _file_registry_repo
+
+# --- Repository factory for dynamic table routes ---
+_repo_cache: Dict[str, BaseRepository] = {}
+
+def get_repository(model_class: Any) -> BaseRepository:
+    """Cached repository factory — one BaseRepository per table name."""
+    table_name = model_class.__table__.name
+    if table_name not in _repo_cache:
+        _repo_cache[table_name] = BaseRepository(model_class)
+    return _repo_cache[table_name]
 
 def init_app_services(storage_provider: StorageProvider = None) -> None:
     """

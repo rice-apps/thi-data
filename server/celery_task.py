@@ -1,12 +1,10 @@
 from celery import Celery
-from services.etl_processor import process_file_task
 from typing import Union
 
 import core.config as config
-from core.deps import get_db_context, get_storage_provider, init_app_services
-from core.database import Base
+from core.deps import get_db_context, get_storage_provider, get_file_registry_repo, init_app_services
+from services.etl_processor import process_file as run_etl
 from core.enums import FileStatus
-import crud
 import logging
 
 logging.basicConfig(
@@ -24,9 +22,10 @@ init_app_services()
 app = Celery('tasks', broker=config.settings.BROKER_URL)
 
 
-def notify_frontend(event: dict) -> None:
+
+def notify_frontend(event: dict, dsn: str = config.settings.DLT_CREDENTIALS) -> None:
     """Publish an event to Postgres LISTEN/NOTIFY channel for SSE clients."""
-    conn = psycopg2.connect(config.settings.DLT_CREDENTIALS)
+    conn = psycopg2.connect(dsn)
     try:
         conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
         with conn.cursor() as cur:
@@ -65,11 +64,10 @@ def update_file_status(file_id: str, status: Union[FileStatus, str], error_messa
         if error_message:
             update_data["error_message"] = error_message
         
-        crud.update_item_by_field(
+        get_file_registry_repo().update_by_field(
             db=db,
-            model_class=Base.classes.file_registry,
-            field_name="file_id",
-            value=file_id,
+            search_field="file_id",
+            search_value=file_id,
             update_data=update_data
         )
 
@@ -84,9 +82,8 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
     try:
         # Get object key from registry
         with get_db_context() as db:
-            records = crud.get_items_by_field(
+            records = get_file_registry_repo().get_by_field(
                 db=db,
-                model_class=Base.classes.file_registry,
                 field_name="file_id",
                 value=file_id
             )
@@ -102,7 +99,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
              raise FileNotFoundError(f"Could not resolve path for {object_key}")
 
         # Run ETL logic
-        error_count = process_file_task(str(file_path), proposed_schema)
+        error_count = run_etl(str(file_path), proposed_schema)
         
         update_file_status(file_id, FileStatus.SUCCESS)
 

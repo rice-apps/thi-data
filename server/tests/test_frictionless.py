@@ -4,14 +4,14 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import crud
+from services.schema_inferencer import infer_from_file
 
 # --- Fixtures ---
 @pytest.fixture
 def mapping_result():
     """Runs the inference function once to be used across multiple tests."""
     test_data_path = os.path.join(os.path.dirname(__file__), "test_data.csv")
-    return crud.validation.infer_from_file(test_data_path)
+    return infer_from_file(test_data_path)
 
 def get_field_type(schema: dict, field_name: str) -> str | None:
     """Helper to extract the inferred type of a specific column from the schema dict."""

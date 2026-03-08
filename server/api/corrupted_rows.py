@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect as sa_inspect, Integer, Float, Numeric, Boolean, DateTime, Date, BigInteger, SmallInteger
-from core.deps import get_db, get_internal_model_class
-import crud
+from core.deps import get_db, get_internal_model_class, get_repository
+from crud.base import BaseRepository, model_to_dict
 from datetime import datetime
 import logging
 
@@ -107,8 +107,9 @@ def create_corrupted_row(
 ):
     """Create a new corrupted row entry."""
     data = row.model_dump()
-    new_item = crud.create_item(db, model_class, data)
-    return crud.model_to_dict(new_item)
+    repo = get_repository(model_class)
+    new_item = repo.create(db, data)
+    return model_to_dict(new_item)
 
 
 @router.get("/api/corrupted_rows", response_model=Dict[str, Any])
@@ -120,11 +121,12 @@ def get_corrupted_rows(
 ):
     """Get all corrupted row entries with pagination."""
     logger.info(f"Fetching corrupted rows with skip={skip}, limit={limit}")
-    try: 
-        items, total = crud.get_all_items(db, model_class, skip=skip, limit=limit)
+    try:
+        repo = get_repository(model_class)
+        items, total = repo.get_all(db, skip=skip, limit=limit)
         logger.info(f"Successfully retrieved {len(items)} corrupted rows (total: {total})")
         return {
-            "data": [crud.model_to_dict(item) for item in items],
+            "data": [model_to_dict(item) for item in items],
             "total": total,
             "page": (skip // limit) + 1,
             "limit": limit
@@ -143,7 +145,8 @@ def delete_corrupted_row(
     """Delete a corrupted row entry by ID."""
     logger.info(f"Attempting to delete corrupted row entry with id: {row_id}")
     try:
-        success = crud.delete_item(db, model_class, row_id)
+        repo = get_repository(model_class)
+        success = repo.delete(db, row_id)
         if not success:
             logger.warning(f"Corrupted row not found: {row_id}")
             raise HTTPException(status_code=404, detail="Corrupted row not found")
@@ -236,7 +239,7 @@ def resolve_corrupted_row(
     result = {
         "status": "success",
         "message": "Row healed and error log cleared.",
-        "updated_record": crud.model_to_dict(record)
+        "updated_record": model_to_dict(record)
     }
     logger.info(f"Corrupted row resolved successfully - table: {target_table}, row_id: {row_id}")
     return result

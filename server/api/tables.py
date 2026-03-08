@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-import crud
+from crud.metadata import get_tables_metadata, get_database_size
 from typing import Any
 from sqlalchemy.orm import Session
 from core.database import Base
@@ -43,7 +43,7 @@ def get_tables_with_metadata(db: Session = Depends(get_db)):
     
     # Bulk fetch all metadata in one go
     # This matches the function defined in crud.py
-    results = crud.get_tables_metadata(db, visible_tables, creation_model, updates_model)
+    results = get_tables_metadata(db, visible_tables, creation_model, updates_model)
     logger.info(f"Retrieved metadata for {len(results)} tables")
     
     return {"tables": results}
@@ -74,7 +74,7 @@ def get_size(
     """
     logger.info(f"Getting size for table: {table_name}")
     try:
-        size_info = crud.get_database_size(table_name, db)
+        size_info = get_database_size(table_name, db)
         if not size_info:
             logger.warning(f"Table not found: {table_name}")
             raise HTTPException(status_code=404, detail="Table not found")

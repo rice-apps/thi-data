@@ -11,7 +11,7 @@ sys.path.insert(0, server_dir)
 from core.deps import get_db
 from core.database import Base, reflect_db
 from core.enums import FileStatus
-import crud 
+from crud.base import BaseRepository, model_to_dict
 
 API_URL = "http://localhost:8000"
 @pytest.fixture(scope="function")
@@ -25,10 +25,7 @@ def setup_file_registry():
     file_id = str(uuid.uuid4())
     object_key = f"uploads/{file_id}-testfile.csv"
 
-    created_record = crud.create_item(
-        db = db,
-        model_class = FileRegistry,
-        item_data = {
+    created_record = BaseRepository(FileRegistry).create(db = db, obj_in = {
             "file_id": file_id,
             "object_key": object_key,
             "status": FileStatus.UPLOADED
@@ -39,9 +36,8 @@ def setup_file_registry():
     yield file_id, object_key
 
     try:
-        crud.delete_item_by_field(
+        BaseRepository(FileRegistry).delete_by_field(
             db=db,
-            model_class=FileRegistry,
             field_name="file_id",
             value=file_id,
         )
@@ -72,7 +68,7 @@ def test_delete_file_registry(setup_file_registry):
     reflect_db()
     FileRegistry = Base.classes.get("file_registry")
     db = next(get_db())
-    records = crud.get_items_by_field(db, FileRegistry, "file_id", file_id)
+    records = BaseRepository(FileRegistry).get_by_field(db, field_name="file_id", value=file_id)
     db.close()
     assert len(records) == 0
 

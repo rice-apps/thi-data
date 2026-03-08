@@ -11,7 +11,7 @@ sys.path.insert(0, server_dir)
 
 from core.deps import get_db
 from core.database import Base, reflect_db
-import crud
+from crud.base import BaseRepository, model_to_dict
 
 METADATA_CREATION_TABLE = "metadata_creation"
 METADATA_UPDATES_TABLE = "metadata_updates"
@@ -32,7 +32,7 @@ def setup_metadata_creation():
 
     created_item = None
     try:
-        created_item = crud.create_item(db, model_class, new_item_data)
+        created_item = BaseRepository(model_class).create(db, new_item_data)
         db.commit()
         db.refresh(created_item)
         item_id = str(created_item.id) # Convert UUID to string if necessary
@@ -40,7 +40,7 @@ def setup_metadata_creation():
     finally:
         if created_item:
             try:
-                crud.delete_item(db, model_class, created_item.id)
+                BaseRepository(model_class).delete(db, created_item.id)
                 db.commit()
             except Exception as e:
                 db.rollback()
@@ -67,7 +67,7 @@ def test_metadata_creation_endpoint():
         created_id = data["id"]
     finally:
         if created_id:
-            crud.delete_item(db, model_class, created_id)
+            BaseRepository(model_class).delete(db, created_id)
         db.close()
 
 def test_search_created_by(setup_metadata_creation):
@@ -120,5 +120,5 @@ def test_metadata_update_endpoint(setup_metadata_creation):
         created_id = data["id"]
     finally:
         if created_id:
-            crud.delete_item(db, model_class, created_id)
+            BaseRepository(model_class).delete(db, created_id)
         db.close()

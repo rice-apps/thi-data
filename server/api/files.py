@@ -7,17 +7,15 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 import logging
 
-from core.deps import get_db, get_storage_provider, get_file_registry_model
+from core.deps import get_db, get_storage_provider, get_file_registry_repo
 from core.enums import FileStatus
-import crud
+from crud.base import BaseRepository, model_to_dict
 from core.storage import StorageProvider
-from services.etl_processor import process_file_task
+from services.etl_processor import process_file as run_etl
 
 router = APIRouter(tags=["files"])
 
 logger = logging.getLogger(__name__)
-
-
 
 
 class FileUpdate(BaseModel):
@@ -30,6 +28,7 @@ async def upload_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     storage_provider: StorageProvider = Depends(get_storage_provider),
+    repo: BaseRepository = Depends(get_file_registry_repo),
 ):
     file_id = str(uuid.uuid4())
     object_key = f"uploads/{file_id}-{file.filename}"
@@ -42,11 +41,7 @@ async def upload_file(
         if not uploaded:
             raise RuntimeError("StorageProvider.upload_file returned False")
 
-        file_registry_model = get_file_registry_model()
-        crud.create_item(
-            db=db,
-            model_class=file_registry_model,
-            item_data={
+        repo.create(db=db, obj_in={
                 "file_id": file_id,
                 "object_key": object_key,
                 "status": FileStatus.UPLOADED,
@@ -79,12 +74,10 @@ def delete_file(
     file_id: str,
     db: Session = Depends(get_db),
     storage_provider: StorageProvider = Depends(get_storage_provider),
+    repo: BaseRepository = Depends(get_file_registry_repo),
 ):
-    file_registry_model = get_file_registry_model()
-
-    file_records = crud.get_items_by_field(
+    file_records = repo.get_by_field(
         db=db,
-        model_class=file_registry_model,
         field_name="file_id",
         value=file_id,
     )
@@ -97,9 +90,8 @@ def delete_file(
     # Remove from storage provider
     storage_provider.delete_file(object_key)
 
-    crud.delete_item_by_field(
+    repo.delete_by_field(
         db=db,
-        model_class=file_registry_model,
         field_name="file_id",
         value=file_id,
     )
@@ -112,18 +104,16 @@ def update_file_registry(
     file_id: str,
     update: FileUpdate,
     db: Session = Depends(get_db),
+    repo: BaseRepository = Depends(get_file_registry_repo),
 ):
-    file_registry_model = get_file_registry_model()
-
     update_data = update.dict(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields provided to update")
 
-    updated_count = crud.update_item_by_field(
+    updated_count = repo.update_by_field(
         db=db,
-        model_class=file_registry_model,
-        field_name="file_id",
-        value=file_id,
+        search_field="file_id",
+        search_value=file_id,
         update_data=update_data,
     )
     if not updated_count:
@@ -141,13 +131,11 @@ def process_file(
     body: ProcessFileRequest,
     db: Session = Depends(get_db),
     storage_provider: StorageProvider = Depends(get_storage_provider),
+    repo: BaseRepository = Depends(get_file_registry_repo),
 ):
     """Synchronous ETL: validate + split + load using the user-confirmed schema."""
-    file_registry_model = get_file_registry_model()
-
-    file_records = crud.get_items_by_field(
+    file_records = repo.get_by_field(
         db=db,
-        model_class=file_registry_model,
         field_name="file_id",
         value=file_id,
     )
@@ -160,30 +148,27 @@ def process_file(
         raise HTTPException(status_code=404, detail="File not found in storage")
 
     try:
-        crud.update_item_by_field(
+        repo.update_by_field(
             db=db,
-            model_class=file_registry_model,
-            field_name="file_id",
-            value=file_id,
+            search_field="file_id",
+            search_value=file_id,
             update_data={"status": FileStatus.PROCESSING},
         )
 
-        process_file_task(str(file_path), body.proposed_schema)
+        run_etl(str(file_path), body.proposed_schema)
 
-        crud.update_item_by_field(
+        repo.update_by_field(
             db=db,
-            model_class=file_registry_model,
-            field_name="file_id",
-            value=file_id,
+            search_field="file_id",
+            search_value=file_id,
             update_data={"status": FileStatus.SUCCESS},
         )
         return {"file_id": file_id, "status": FileStatus.SUCCESS}
     except Exception as e:
-        crud.update_item_by_field(
+        repo.update_by_field(
             db=db,
-            model_class=file_registry_model,
-            field_name="file_id",
-            value=file_id,
+            search_field="file_id",
+            search_value=file_id,
             update_data={"status": FileStatus.FAILED},
         )
         raise HTTPException(status_code=500, detail=f"Processing failed: {e}")

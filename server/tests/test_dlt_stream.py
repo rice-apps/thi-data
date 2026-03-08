@@ -109,7 +109,7 @@ class TestArrowTableExtraction:
         mock_dlt.pipeline.return_value = mock_pipeline_instance
         mock_pipeline_instance.run.return_value = MagicMock()
 
-        real_dlt_pipeline.load_to_postgres(duckdb_con)
+        real_dlt_pipeline.DLTPipeline().load_to_postgres(duckdb_con)
 
         assert mock_pipeline_instance.run.call_count == 2
 
@@ -138,7 +138,7 @@ class TestArrowTableExtraction:
         mock_dlt.pipeline.return_value = mock_pipeline_instance
         mock_pipeline_instance.run.return_value = MagicMock()
 
-        real_dlt_pipeline.load_to_postgres(duckdb_con)
+        real_dlt_pipeline.DLTPipeline().load_to_postgres(duckdb_con)
 
         assert mock_pipeline_instance.run.call_count == 2
         for c in mock_pipeline_instance.run.call_args_list:
@@ -176,7 +176,7 @@ class TestPipelineInvocation:
         mock_dlt.pipeline.return_value = mock_pipeline_instance
         mock_pipeline_instance.run.return_value = MagicMock()
 
-        real_dlt_pipeline.load_to_postgres(duckdb_con)
+        real_dlt_pipeline.DLTPipeline().load_to_postgres(duckdb_con)
 
         mock_postgres.assert_called_once_with(credentials="postgresql://user:pass@host/db")
 
@@ -198,7 +198,7 @@ class TestPipelineInvocation:
         mock_dlt.pipeline.return_value = mock_pipeline_instance
         mock_pipeline_instance.run.return_value = MagicMock()
 
-        real_dlt_pipeline.load_to_postgres(duckdb_con)
+        real_dlt_pipeline.DLTPipeline().load_to_postgres(duckdb_con)
 
         for c in mock_pipeline_instance.run.call_args_list:
             assert c[1]["write_disposition"] == "merge"
@@ -228,7 +228,7 @@ class TestSchemaEvolutionConflict:
         )
 
         with pytest.raises(Exception, match="Schema evolution conflict"):
-            real_dlt_pipeline.load_to_postgres(duckdb_con)
+            real_dlt_pipeline.DLTPipeline().load_to_postgres(duckdb_con)
 
     @patch("services.dlt_pipeline.dlt")
     def test_corrupted_load_still_runs_after_clean_succeeds(
@@ -252,7 +252,7 @@ class TestSchemaEvolutionConflict:
         ]
 
         with pytest.raises(Exception, match="corrupted_rows schema conflict"):
-            real_dlt_pipeline.load_to_postgres(duckdb_con)
+            real_dlt_pipeline.DLTPipeline().load_to_postgres(duckdb_con)
 
         assert mock_pipeline_instance.run.call_count == 2
 
@@ -272,7 +272,7 @@ class TestNetworkFailurePersistence:
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
     @patch("celery_task.update_file_status")
-    @patch("celery_task.process_file_task")
+    @patch("celery_task.run_etl")
     def test_task_raises_on_etl_failure(
         self,
         mock_process,
@@ -297,8 +297,10 @@ class TestNetworkFailurePersistence:
         mock_get_db_ctx.side_effect = lambda: fake_db_context().__enter__() and None or fake_db_context()
         mock_get_db_ctx.return_value = fake_db_context()
 
-        with patch("celery_task.crud") as mock_crud:
-            mock_crud.get_items_by_field.return_value = [mock_record]
+        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+            mock_repo = MagicMock()
+            mock_repo.get_by_field.return_value = [mock_record]
+            mock_get_repo.return_value = mock_repo
 
             mock_storage = MagicMock()
             mock_storage.get_file_path.return_value = "/tmp/test.csv"
@@ -323,7 +325,7 @@ class TestNetworkFailurePersistence:
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
     @patch("celery_task.update_file_status")
-    @patch("celery_task.process_file_task")
+    @patch("celery_task.run_etl")
     def test_task_sets_processing_then_failed(
         self,
         mock_process,
@@ -345,8 +347,10 @@ class TestNetworkFailurePersistence:
 
         mock_get_db_ctx.return_value = fake_db_context()
 
-        with patch("celery_task.crud") as mock_crud:
-            mock_crud.get_items_by_field.return_value = [mock_record]
+        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+            mock_repo = MagicMock()
+            mock_repo.get_by_field.return_value = [mock_record]
+            mock_get_repo.return_value = mock_repo
 
             mock_storage = MagicMock()
             mock_storage.get_file_path.return_value = "/tmp/test.csv"
@@ -379,7 +383,7 @@ class TestNetworkFailurePersistence:
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
     @patch("celery_task.update_file_status")
-    @patch("celery_task.process_file_task")
+    @patch("celery_task.run_etl")
     def test_success_path_calls_refresh_then_notify(
         self,
         mock_process,
@@ -405,8 +409,10 @@ class TestNetworkFailurePersistence:
 
         mock_get_db_ctx.return_value = fake_db_context()
 
-        with patch("celery_task.crud") as mock_crud:
-            mock_crud.get_items_by_field.return_value = [mock_record]
+        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+            mock_repo = MagicMock()
+            mock_repo.get_by_field.return_value = [mock_record]
+            mock_get_repo.return_value = mock_repo
 
             mock_storage = MagicMock()
             mock_storage.get_file_path.return_value = MagicMock(
@@ -438,7 +444,7 @@ class TestNetworkFailurePersistence:
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
     @patch("celery_task.update_file_status")
-    @patch("celery_task.process_file_task")
+    @patch("celery_task.run_etl")
     def test_refresh_failure_prevents_success_notify(
         self,
         mock_process,
@@ -464,8 +470,10 @@ class TestNetworkFailurePersistence:
 
         mock_get_db_ctx.return_value = fake_db_context()
 
-        with patch("celery_task.crud") as mock_crud:
-            mock_crud.get_items_by_field.return_value = [mock_record]
+        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+            mock_repo = MagicMock()
+            mock_repo.get_by_field.return_value = [mock_record]
+            mock_get_repo.return_value = mock_repo
 
             mock_storage = MagicMock()
             mock_storage.get_file_path.return_value = MagicMock(
@@ -492,7 +500,7 @@ class TestNetworkFailurePersistence:
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
     @patch("celery_task.update_file_status")
-    @patch("celery_task.process_file_task")
+    @patch("celery_task.run_etl")
     def test_failure_notify_error_does_not_crash(
         self,
         mock_process,
@@ -516,8 +524,10 @@ class TestNetworkFailurePersistence:
 
         mock_get_db_ctx.return_value = fake_db_context()
 
-        with patch("celery_task.crud") as mock_crud:
-            mock_crud.get_items_by_field.return_value = [mock_record]
+        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+            mock_repo = MagicMock()
+            mock_repo.get_by_field.return_value = [mock_record]
+            mock_get_repo.return_value = mock_repo
 
             mock_storage = MagicMock()
             mock_storage.get_file_path.return_value = MagicMock(

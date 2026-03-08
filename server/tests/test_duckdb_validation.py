@@ -27,10 +27,12 @@ _fake_dlt_pipeline = types.ModuleType("services.dlt_pipeline")
 _fake_dlt_pipeline.CORRUPTED_ROWS_NAME = CORRUPTED_ROWS_NAME  # type: ignore[attr-defined]
 _fake_dlt_pipeline.RAW_DATA_NAME = RAW_DATA_NAME  # type: ignore[attr-defined]
 _fake_dlt_pipeline.CLEAN_DATA_NAME = CLEAN_DATA_NAME  # type: ignore[attr-defined]
-_fake_dlt_pipeline.load_to_postgres = lambda _con: None  # type: ignore[attr-defined]
+class MockDLTPipeline:
+    def load_to_postgres(self, con): pass
+_fake_dlt_pipeline.DLTPipeline = MockDLTPipeline
 sys.modules["services.dlt_pipeline"] = _fake_dlt_pipeline
 
-from services.etl_processor import validate_and_split_data
+from services.etl_processor import _validate_and_split_data as validate_and_split_data
 
 
 # ---------------------------------------------------------------------------

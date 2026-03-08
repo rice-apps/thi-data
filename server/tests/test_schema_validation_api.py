@@ -52,11 +52,13 @@ class TestValidateAndSplitEdgeCases:
         _fake_dlt.CORRUPTED_ROWS_NAME = "corrupted_rows"
         _fake_dlt.RAW_DATA_NAME = "raw_staging"
         _fake_dlt.CLEAN_DATA_NAME = "clean_data"
-        _fake_dlt.load_to_postgres = lambda _con: None
+        class MockDLTPipeline:
+            def load_to_postgres(self, con): pass
+        _fake_dlt.DLTPipeline = MockDLTPipeline
         sys.modules["services.dlt_pipeline"] = _fake_dlt
 
-        from services.etl_processor import validate_and_split_data
-        self.validate_and_split_data = validate_and_split_data
+        from services.etl_processor import _validate_and_split_data
+        self.validate_and_split_data = _validate_and_split_data
         self.RAW = "raw_staging"
         self.CLEAN = "clean_data"
         self.CORRUPTED = "corrupted_rows"
@@ -151,6 +153,7 @@ class TestSchemaConfirmEndpoint:
 
         mock_db = MagicMock()
         mock_storage = MagicMock()
+        mock_storage.get_file_path.return_value = "/tmp/some_path_that_is_mocked"
 
         def override_get_db():
             yield mock_db
@@ -160,22 +163,22 @@ class TestSchemaConfirmEndpoint:
 
         client = TestClient(app)
 
-        # Mock crud to return a file record and accept updates
-        with patch("api.schema.crud") as mock_crud, \
-             patch("api.schema.get_file_registry_model") as mock_get_model, \
-             patch("api.schema.etl_processor") as mock_etl:
+        from core.deps import get_file_registry_repo
 
-            mock_get_model.return_value = MagicMock()
-            mock_crud.get_items_by_field.return_value = [MagicMock()]
-            mock_crud.update_item_by_field.return_value = 1
+        mock_repo = MagicMock()
+        mock_repo.get_by_field.return_value = [MagicMock()]
+        mock_repo.update_by_field.return_value = 1
 
-            payload = {
-                "columns": [
-                    {"name": "age", "type": "INTEGER"},
-                    {"name": "name", "type": "VARCHAR"},
-                ]
-            }
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
 
+        payload = {
+            "columns": [
+                {"name": "age", "type": "INTEGER"},
+                {"name": "name", "type": "VARCHAR"},
+            ]
+        }
+
+        with patch("api.schema.run_etl") as mock_run_etl:
             response = client.patch("/api/schema/test-file-123", json=payload)
 
             assert response.status_code == 200
@@ -183,12 +186,9 @@ class TestSchemaConfirmEndpoint:
             assert data["file_id"] == "test-file-123"
             assert data["status"] == FileStatus.SCHEMA_CONFIRMED
 
-            # Verify ETL was called with injected deps
-            mock_etl.run_pipeline_with_schema.assert_called_once_with(
-                "test-file-123",
-                {"age": "INTEGER", "name": "VARCHAR"},
-                db=mock_db,
-                storage=mock_storage,
+            mock_run_etl.assert_called_once_with(
+                "/tmp/some_path_that_is_mocked",
+                {"age": "INTEGER", "name": "VARCHAR"}
             )
 
     def test_confirm_schema_returns_404_for_missing_file(self):
@@ -207,15 +207,17 @@ class TestSchemaConfirmEndpoint:
 
         client = TestClient(app)
 
-        with patch("api.schema.crud") as mock_crud, \
-             patch("api.schema.get_file_registry_model") as mock_get_model:
-            mock_get_model.return_value = MagicMock()
-            mock_crud.get_items_by_field.return_value = []  # No file found
+        from core.deps import get_file_registry_repo
 
-            payload = {"columns": [{"name": "age", "type": "INTEGER"}]}
-            response = client.patch("/api/schema/nonexistent-file", json=payload)
+        mock_repo = MagicMock()
+        mock_repo.get_by_field.return_value = []
 
-            assert response.status_code == 404
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        payload = {"columns": [{"name": "age", "type": "INTEGER"}]}
+        response = client.patch("/api/schema/nonexistent-file", json=payload)
+
+        assert response.status_code == 404
 
 
 # ===========================================================================
@@ -226,7 +228,7 @@ class TestProcessFileEndpoint:
     """Test the process_file endpoint with mocked deps."""
 
     def test_process_file_success(self):
-        """Should call process_file_task and update status to SUCCESS."""
+        """Should call run_etl and update status to SUCCESS."""
         from fastapi.testclient import TestClient
         from api.files import router
         from fastapi import FastAPI
@@ -248,26 +250,26 @@ class TestProcessFileEndpoint:
 
         client = TestClient(app)
 
-        with patch("api.files.crud") as mock_crud, \
-             patch("api.files.get_file_registry_model") as mock_get_model, \
-             patch("api.files.process_file_task") as mock_process:
+        from core.deps import get_file_registry_repo
 
-            mock_model = MagicMock()
-            mock_get_model.return_value = mock_model
-            mock_record = MagicMock()
-            mock_record.object_key = "uploads/test.csv"
-            mock_crud.get_items_by_field.return_value = [mock_record]
-            mock_crud.update_item_by_field.return_value = 1
-            mock_process.return_value = 0
+        mock_repo = MagicMock()
+        mock_record = MagicMock()
+        mock_record.object_key = "uploads/test.csv"
+        mock_repo.get_by_field.return_value = [mock_record]
+        mock_repo.update_by_field.return_value = 1
 
-            payload = {"proposed_schema": {"age": "INTEGER", "name": "VARCHAR"}}
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        payload = {"proposed_schema": {"age": "INTEGER", "name": "VARCHAR"}}
+
+        with patch("api.files.run_etl", return_value=0) as mock_run_etl:
             response = client.post("/api/files/test-123/process", json=payload)
 
             assert response.status_code == 200
             data = response.json()
             assert data["status"] == FileStatus.SUCCESS
 
-            mock_process.assert_called_once_with(
+            mock_run_etl.assert_called_once_with(
                 str(Path("/tmp/test.csv")),
                 {"age": "INTEGER", "name": "VARCHAR"}
             )
@@ -288,14 +290,16 @@ class TestProcessFileEndpoint:
 
         client = TestClient(app)
 
-        with patch("api.files.crud") as mock_crud, \
-             patch("api.files.get_file_registry_model") as mock_get_model:
-            mock_get_model.return_value = MagicMock()
-            mock_crud.get_items_by_field.return_value = []
+        from core.deps import get_file_registry_repo
 
-            payload = {"proposed_schema": {"age": "INTEGER"}}
-            response = client.post("/api/files/missing/process", json=payload)
-            assert response.status_code == 404
+        mock_repo = MagicMock()
+        mock_repo.get_by_field.return_value = []
+
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        payload = {"proposed_schema": {"age": "INTEGER"}}
+        response = client.post("/api/files/missing/process", json=payload)
+        assert response.status_code == 404
 
     def test_process_file_etl_failure_sets_failed_status(self):
         """If ETL raises, status should be set to FAILED and 500 returned."""
@@ -320,18 +324,19 @@ class TestProcessFileEndpoint:
 
         client = TestClient(app)
 
-        with patch("api.files.crud") as mock_crud, \
-             patch("api.files.get_file_registry_model") as mock_get_model, \
-             patch("api.files.process_file_task") as mock_process:
+        from core.deps import get_file_registry_repo
 
-            mock_get_model.return_value = MagicMock()
-            mock_record = MagicMock()
-            mock_record.object_key = "uploads/test.csv"
-            mock_crud.get_items_by_field.return_value = [mock_record]
-            mock_crud.update_item_by_field.return_value = 1
-            mock_process.side_effect = RuntimeError("DuckDB crashed")
+        mock_repo = MagicMock()
+        mock_record = MagicMock()
+        mock_record.object_key = "uploads/test.csv"
+        mock_repo.get_by_field.return_value = [mock_record]
+        mock_repo.update_by_field.return_value = 1
 
-            payload = {"proposed_schema": {"age": "INTEGER"}}
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        payload = {"proposed_schema": {"age": "INTEGER"}}
+
+        with patch("api.files.run_etl", side_effect=RuntimeError("DuckDB crashed")):
             response = client.post("/api/files/test-fail/process", json=payload)
 
             assert response.status_code == 500
@@ -339,7 +344,7 @@ class TestProcessFileEndpoint:
 
             # Verify status was updated to FAILED
             failed_calls = [
-                c for c in mock_crud.update_item_by_field.call_args_list
+                c for c in mock_repo.update_by_field.call_args_list
                 if c[1].get("update_data", {}).get("status") == FileStatus.FAILED
             ]
             assert len(failed_calls) >= 1
@@ -375,35 +380,36 @@ class TestValidateSchemaEndpoint:
 
         client = TestClient(app)
 
-        with patch("api.validation.crud") as mock_crud, \
-             patch("api.validation.get_file_registry_model") as mock_get_model:
+        from core.deps import get_file_registry_repo
 
-            mock_get_model.return_value = MagicMock()
-            mock_record = MagicMock()
-            mock_record.object_key = "uploads/test.csv"
-            mock_crud.get_items_by_field.return_value = [mock_record]
-            mock_crud.update_item_by_field.return_value = 1
+        mock_repo = MagicMock()
+        mock_record = MagicMock()
+        mock_record.object_key = "uploads/test.csv"
+        mock_repo.get_by_field.return_value = [mock_record]
+        mock_repo.update_by_field.return_value = 1
 
-            # Mock frictionless inference result
-            mock_crud.infer_from_file.return_value = {
-                "schema": {
-                    "fields": [
-                        {"name": "patient_id", "type": "string"},
-                        {"name": "age", "type": "integer"},
-                        {"name": "weight", "type": "number"},
-                    ]
-                },
-                "sample": {}
-            }
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
 
+        mock_infer_result = {
+            "schema": {
+                "fields": [
+                    {"name": "patient_id", "type": "string"},
+                    {"name": "age", "type": "integer"},
+                    {"name": "weight", "type": "number"},
+                ]
+            },
+            "sample": {}
+        }
+
+        with patch("api.validation.infer_from_file", return_value=mock_infer_result):
             response = client.post("/api/validate_schema", params={"file_id": "test-123"})
 
-            assert response.status_code == 200
-            data = response.json()
-            assert data["file_id"] == "test-123"
-            assert len(data["columns"]) == 3
-            assert data["columns"][0] == {"name": "patient_id", "type": "string"}
-            assert data["columns"][1] == {"name": "age", "type": "integer"}
+        assert response.status_code == 200
+        data = response.json()
+        assert data["file_id"] == "test-123"
+        assert len(data["columns"]) == 3
+        assert data["columns"][0] == {"name": "patient_id", "type": "string"}
+        assert data["columns"][1] == {"name": "age", "type": "integer"}
 
     def test_validate_schema_file_not_found(self):
         """Should return 404 when file_id not in registry."""
@@ -421,13 +427,15 @@ class TestValidateSchemaEndpoint:
 
         client = TestClient(app)
 
-        with patch("api.validation.crud") as mock_crud, \
-             patch("api.validation.get_file_registry_model") as mock_get_model:
-            mock_get_model.return_value = MagicMock()
-            mock_crud.get_items_by_field.return_value = []
+        from core.deps import get_file_registry_repo
 
-            response = client.post("/api/validate_schema", params={"file_id": "missing"})
-            assert response.status_code == 404
+        mock_repo = MagicMock()
+        mock_repo.get_by_field.return_value = []
+
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        response = client.post("/api/validate_schema", params={"file_id": "missing"})
+        assert response.status_code == 404
 
 
 # ===========================================================================
@@ -468,16 +476,6 @@ class TestDependencyInjection:
 
             mock_session.rollback.assert_called_once()
             mock_session.close.assert_called_once()
-
-    def test_run_pipeline_with_schema_accepts_injected_deps(self):
-        """run_pipeline_with_schema should accept db and storage as params."""
-        import inspect
-        from services.etl_processor import run_pipeline_with_schema
-
-        sig = inspect.signature(run_pipeline_with_schema)
-        params = list(sig.parameters.keys())
-        assert "db" in params, "run_pipeline_with_schema must accept 'db' parameter"
-        assert "storage" in params, "run_pipeline_with_schema must accept 'storage' parameter"
 
     def test_storage_provider_not_imported_from_supabase(self):
         """No server module should import from core.supabase."""

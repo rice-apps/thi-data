@@ -11,7 +11,7 @@ sys.path.insert(0, server_dir)
 
 from core.deps import get_db, get_model_class
 from core.database import Base, reflect_db
-import crud
+from crud.base import BaseRepository, model_to_dict
 
 TABLE = "test_database" 
 EXAMPLE_FIRST_NAME = "Jeff"
@@ -40,7 +40,7 @@ def setup_item():
     created_item = None
     try:
         # --- 1. SETUP ---
-        created_item = crud.create_item(db, model_class, new_item_data)
+        created_item = BaseRepository(model_class).create(db, new_item_data)
         db.commit()
         db.refresh(created_item)
         item_id = created_item.id
@@ -51,7 +51,7 @@ def setup_item():
         # --- 2. TEARDOWN: Clean up the database ---
         if created_item:
             try:
-                crud.delete_item(db, model_class, created_item.id)
+                BaseRepository(model_class).delete(db, created_item.id)
                 db.commit()
             except Exception as e:
                 db.rollback()
@@ -74,7 +74,7 @@ def setup_metadata_creation():
     created_item = None
     try:
         # --- 1. SETUP ---
-        created_item = crud.create_item(db, model_class, new_item_data)
+        created_item = BaseRepository(model_class).create(db, new_item_data)
         db.commit()
         db.refresh(created_item)
         item_id = created_item.id
@@ -85,7 +85,7 @@ def setup_metadata_creation():
         # --- 2. TEARDOWN: Clean up the database ---
         if created_item:
             try:
-                crud.delete_item(db, model_class, created_item.id)
+                BaseRepository(model_class).delete(db, created_item.id)
                 db.commit()
             except Exception as e:
                 db.rollback()
@@ -153,7 +153,7 @@ def test_create_item():
         # Teardown: Clean up the item this test created
         if item_id:
             try:
-                crud.delete_item(db, model_class, item_id)
+                BaseRepository(model_class).delete(db, item_id)
                 db.commit()
             except Exception as e:
                 db.rollback()
@@ -212,7 +212,7 @@ def test_delete_item():
     item_id = None
 
     try:
-        created_item = crud.create_item(db, model_class, new_item_data)
+        created_item = BaseRepository(model_class).create(db, new_item_data)
         db.commit()
         db.refresh(created_item)
         item_id = created_item.id
@@ -230,7 +230,7 @@ def test_delete_item():
     db.close()
     db = next(get_db())
 
-    item = crud.get_one_item(db, model_class, item_id)
+    item = BaseRepository(model_class).get_by_id(db, item_id)
     assert item is None
     db.close()
 
@@ -285,7 +285,7 @@ def test_metadata_update(setup_metadata_creation):
     finally:
         if update_item_id:
             try:
-                crud.delete_item(db, update_model_class, update_item_id)
+                BaseRepository(update_model_class).delete(db, update_item_id)
                 db.commit()
             except Exception as e:
                 db.rollback()

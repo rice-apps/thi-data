@@ -2,9 +2,9 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
-from core.deps import get_db, get_model_class, get_internal_model_class
+from core.deps import get_db, get_model_class, get_internal_model_class, get_repository
 from core.database import Base
-import crud
+from crud.base import BaseRepository, model_to_dict
 from datetime import datetime
 import logging
 
@@ -93,10 +93,10 @@ def get_all_items(
 
         data = []
         for main_row, corrupted_row in results:
-            item_dict = crud.model_to_dict(main_row)
+            item_dict = model_to_dict(main_row)
 
             if corrupted_row:
-                corrupted_dict = crud.model_to_dict(corrupted_row)
+                corrupted_dict = model_to_dict(corrupted_row)
                 error_context: Dict[str, Any] = {}
 
                 for col in main_columns:
@@ -126,10 +126,11 @@ def get_all_items(
         }
 
     else:
-        items, total = crud.get_all_items(db, model_class, skip=skip, limit=limit)
+        repo = get_repository(model_class)
+        items, total = repo.get_all(db, skip=skip, limit=limit)
         logger.info(f"Retrieved {len(items)} items from {table_name}, total: {total}")
         return {
-            "data": [crud.model_to_dict(item) for item in items],
+            "data": [model_to_dict(item) for item in items],
             "total": total,
             "page": (skip // limit) + 1,
             "limit": limit
@@ -157,10 +158,11 @@ def create_item(
             )
             
     try:
-        new_item = crud.create_item(db, model_class, item_data)
+        repo = get_repository(model_class)
+        new_item = repo.create(db, item_data)
         log_metadata_update(db, table_name, user_name=x_user_name or "system")
         logger.info(f"Item created successfully in table {table_name} with id: {new_item.id}")
-        return crud.model_to_dict(new_item)
+        return model_to_dict(new_item)
     except Exception as e:
         logger.error(f"Error creating item in table {table_name}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"Error creating item: {e}")
@@ -176,10 +178,11 @@ def match_items(
 ) -> Dict[str, Any]:
     logger.info(f"Searching table {table_name} for column '{column}' matching '{match}' (skip={skip}, limit={limit})")
     try:
-        results, total = crud.filter_text(db, model_class, column, match, skip=skip, limit=limit)
+        repo = get_repository(model_class)
+        results, total = repo.filter_text(db, column, match, skip=skip, limit=limit)
         logger.info(f"Found {total} matching items, returning {len(results)} results")
         return {
-            "data": [crud.model_to_dict(item) for item in results],
+            "data": [model_to_dict(item) for item in results],
             "total": total,
             "page": (skip // limit) + 1,
             "limit": limit
@@ -195,12 +198,13 @@ def get_one_item(
     db: Session = Depends(get_db)
 ) -> dict:
     logger.info(f"Getting item {item_id} from table")
-    item = crud.get_one_item(db, model_class, item_id)
+    repo = get_repository(model_class)
+    item = repo.get_by_id(db, item_id)
     if not item:
         logger.warning(f"Item {item_id} not found")
         raise HTTPException(status_code=404, detail="Item not found")
     logger.info(f"Item {item_id} retrieved successfully")
-    return crud.model_to_dict(item)
+    return model_to_dict(item)
 
 @router.put("/api/{table_name}/{item_id}")
 def update_item(
@@ -212,7 +216,8 @@ def update_item(
     db: Session = Depends(get_db)
 ) -> dict:
     logger.info(f"Updating item {item_id} in table: {table_name}, user: {x_user_name or 'system'}")
-    item = crud.get_one_item(db, model_class, item_id)
+    repo = get_repository(model_class)
+    item = repo.get_by_id(db, item_id)
     if not item:
         logger.warning(f"Item {item_id} not found in table {table_name}")
         raise HTTPException(status_code=404, detail="Item not found")
@@ -228,13 +233,12 @@ def update_item(
         if key in pk_keys:
             logger.warning(f"Attempt to update primary key field '{key}' in table {table_name}")
             raise HTTPException(status_code=400, detail=f"Cannot update primary key field: '{key}'")
-        setattr(item, key, value)
     
     try:
-        new_item = crud.update_item(db, model_class, item_id, item)
+        new_item = repo.update(db=db, db_obj=item, obj_in=item_data)
         log_metadata_update(db, table_name, user_name=x_user_name or "system")
         logger.info(f"Item {item_id} updated successfully in table {table_name}")
-        return crud.model_to_dict(new_item)
+        return model_to_dict(new_item)
     except Exception as e:
         logger.error(f"Error updating item {item_id} in table {table_name}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"Error updating item: {e}")
@@ -248,7 +252,8 @@ def delete_item(
     db: Session = Depends(get_db)
 ):
     logger.info(f"Deleting item {item_id} from table: {table_name}, user: {x_user_name or 'system'}")
-    success = crud.delete_item(db, model_class, item_id)
+    repo = get_repository(model_class)
+    success = repo.delete(db, item_id)
     if not success:
         logger.warning(f"Item {item_id} not found in table {table_name}")
         raise HTTPException(status_code=404, detail="Item not found")

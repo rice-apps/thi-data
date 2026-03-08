@@ -19,7 +19,7 @@ sys.path.insert(0, server_dir)
 
 from core.deps import get_db
 from core.database import Base, reflect_db
-import crud
+from crud.base import BaseRepository, model_to_dict
 from sqlalchemy import Integer, Float, Boolean, String
 CORRUPTED_ROWS_TABLE = "corrupted_rows"
 TARGET_TABLE = "test_database"  # Must have integer 'age' column for validation tests
@@ -47,7 +47,7 @@ def setup_corrupted_row():
 
     created_item = None
     try:
-        created_item = crud.create_item(db, model_class, new_item_data)
+        created_item = BaseRepository(model_class).create(db, new_item_data)
         db.commit()
         db.refresh(created_item)
         item_id = created_item.id
@@ -55,7 +55,7 @@ def setup_corrupted_row():
     finally:
         if created_item:
             try:
-                crud.delete_item(db, model_class, created_item.id)
+                BaseRepository(model_class).delete(db, created_item.id)
                 db.commit()
             except Exception as e:
                 db.rollback()
@@ -85,7 +85,7 @@ def setup_target_row_with_corruption():
 
     try:
         # Create a row with NULL age (simulating a corrupted cast)
-        target_item = crud.create_item(db, target_model, {
+        target_item = BaseRepository(target_model).create(db, {
             "first_name": "Corrupted",
             "last_name": "TestUser",
             "age": None
@@ -95,7 +95,7 @@ def setup_target_row_with_corruption():
         target_id = target_item.id
 
         # Create the matching corrupted_rows entry
-        corrupted_item = crud.create_item(db, corrupted_model, {
+        corrupted_item = BaseRepository(corrupted_model).create(db, {
             "target_table": TARGET_TABLE,
             "row_id": str(target_id),
             "error_reason": "TRY_CAST failed: 'abc' is not a valid INTEGER",
@@ -109,9 +109,9 @@ def setup_target_row_with_corruption():
         # Cleanup
         try:
             if corrupted_item:
-                crud.delete_item(db, corrupted_model, corrupted_item.id)
+                BaseRepository(corrupted_model).delete(db, corrupted_item.id)
             if target_item:
-                crud.delete_item(db, target_model, target_item.id)
+                BaseRepository(target_model).delete(db, target_item.id)
             db.commit()
         except Exception as e:
             db.rollback()
@@ -149,7 +149,7 @@ class TestCorruptedRowsCRUD:
         finally:
             if created_id:
                 try:
-                    crud.delete_item(db, model_class, created_id)
+                    BaseRepository(model_class).delete(db, created_id)
                     db.commit()
                 except Exception as e:
                     db.rollback()
@@ -184,7 +184,7 @@ class TestCorruptedRowsCRUD:
             "row_id": "456",
             "error_reason": "Delete test message"
         }
-        created_item = crud.create_item(db, model_class, new_item_data)
+        created_item = BaseRepository(model_class).create(db, new_item_data)
         db.commit()
         db.refresh(created_item)
         item_id = created_item.id
@@ -384,12 +384,14 @@ class TestETLSidecarBehavior:
         fake.CORRUPTED_ROWS_NAME = "corrupted_rows"
         fake.RAW_DATA_NAME = "raw_staging"
         fake.CLEAN_DATA_NAME = "clean_data"
-        fake.load_to_postgres = lambda _con: None
+        class MockDLTPipeline:
+            def load_to_postgres(self, con): pass
+        fake.DLTPipeline = MockDLTPipeline
         sys.modules["services.dlt_pipeline"] = fake
 
     def _seed_and_validate(self, con, columns, rows, schema_map):
         """Helper to seed raw_staging and run validation."""
-        from services.etl_processor import validate_and_split_data
+        from services.etl_processor import _validate_and_split_data
 
         col_defs = ", ".join(f"{col} VARCHAR" for col in columns)
         con.execute(f"CREATE TABLE raw_staging ({col_defs})")
@@ -397,7 +399,7 @@ class TestETLSidecarBehavior:
         for row in rows:
             con.execute(f"INSERT INTO raw_staging VALUES ({placeholders})", list(row))
 
-        return validate_and_split_data(con, schema_map)
+        return _validate_and_split_data(con, schema_map)
 
     def test_all_rows_in_clean_table_including_corrupted(self, duckdb_con):
         """
