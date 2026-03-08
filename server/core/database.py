@@ -6,6 +6,7 @@ from sqlalchemy.pool import NullPool
 import logging
 import time
 from .config import settings
+from sqlalchemy_dlock.factory import create_sadlock 
 
 # Configure Logging
 logging.basicConfig()
@@ -15,6 +16,8 @@ logger.setLevel(logging.INFO)
 engine = create_engine(settings.DATABASE_URL, poolclass=NullPool)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = automap_base()
+
+REFRESH_KEY = 'db_reflection_schema_refresh'
 
 def run_migrations():
     """
@@ -56,11 +59,19 @@ def run_migrations():
         logger.error(f"Error applying migrations: {e}")
 
 def reflect_db():
+    """
+    Safely reflects the database schema into SQLAlchemy ORM models using a distributed lock.
+    """
+
+    
     try:
-        # Re-initialize Base to ensure fresh reflection if called multiple times
-        # though usually called once at startup.
-        Base.prepare(autoload_with=engine)
-        logging.info(f"Tables reflected: {list(Base.classes.keys())}")
+        with engine.connect() as conn:
+            # 1. Create the lock so multiple workers don't reflect at the same time
+            lock = create_sadlock(conn, REFRESH_KEY)
+            
+            with lock:
+                # 2. Perform the actual reflection!
+                Base.prepare(autoload_with=engine)
+        logger.info(f"Tables reflected successfully: {list(Base.classes.keys())}")
     except Exception as e:
-        logging.error(f"Error reflecting database: {e}")
-        
+        logger.error(f"Error reflecting database: {e}")

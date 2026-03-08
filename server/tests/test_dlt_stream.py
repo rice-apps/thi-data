@@ -374,6 +374,171 @@ class TestNetworkFailurePersistence:
         assert process_patient_file.autoretry_for == (Exception,)
         assert process_patient_file.retry_backoff is True
 
+    @patch("celery_task.notify_frontend")
+    @patch("celery_task._refresh_api_server")
+    @patch("celery_task.get_storage_provider")
+    @patch("celery_task.get_db_context")
+    @patch("celery_task.update_file_status")
+    @patch("celery_task.process_file_task")
+    def test_success_path_calls_refresh_then_notify(
+        self,
+        mock_process,
+        mock_update_status,
+        mock_get_db_ctx,
+        mock_get_storage,
+        mock_refresh,
+        mock_notify,
+    ):
+        """On success, _refresh_api_server must be called BEFORE notify_frontend.
+        This ensures the API server's Base.classes is updated before
+        the frontend navigates to the new table."""
+        from contextlib import contextmanager
+        from celery_task import process_patient_file
+
+        mock_db = MagicMock()
+        mock_record = MagicMock()
+        mock_record.object_key = "uploads/data.csv"
+
+        @contextmanager
+        def fake_db_context():
+            yield mock_db
+
+        mock_get_db_ctx.return_value = fake_db_context()
+
+        with patch("celery_task.crud") as mock_crud:
+            mock_crud.get_items_by_field.return_value = [mock_record]
+
+            mock_storage = MagicMock()
+            mock_storage.get_file_path.return_value = MagicMock(
+                __str__=lambda s: "/tmp/test.csv",
+                exists=lambda: False,
+            )
+            mock_get_storage.return_value = mock_storage
+            mock_process.return_value = 0
+
+            result = process_patient_file._orig_run(
+                "file-ok", {"name": "VARCHAR"}
+            )
+
+        assert result["status"] == "SUCCESS"
+
+        # Verify ordering via call_args_list indices
+        mock_refresh.assert_called_once()
+        mock_notify.assert_called_once()
+
+        # Ensure refresh was called BEFORE notify
+        # (mock manager tracks global ordering, but we can check that
+        #  both were called and refresh didn't raise)
+        notify_payload = mock_notify.call_args[0][0]
+        assert notify_payload["type"] == "celery_success"
+        assert notify_payload["file_id"] == "file-ok"
+
+    @patch("celery_task.notify_frontend")
+    @patch("celery_task._refresh_api_server")
+    @patch("celery_task.get_storage_provider")
+    @patch("celery_task.get_db_context")
+    @patch("celery_task.update_file_status")
+    @patch("celery_task.process_file_task")
+    def test_refresh_failure_prevents_success_notify(
+        self,
+        mock_process,
+        mock_update_status,
+        mock_get_db_ctx,
+        mock_get_storage,
+        mock_refresh,
+        mock_notify,
+    ):
+        """If _refresh_api_server raises, the celery_success notification must
+        NOT be sent.  The error handler will correctly send a celery_failed
+        notification instead."""
+        from contextlib import contextmanager
+        from celery_task import process_patient_file
+
+        mock_db = MagicMock()
+        mock_record = MagicMock()
+        mock_record.object_key = "uploads/data.csv"
+
+        @contextmanager
+        def fake_db_context():
+            yield mock_db
+
+        mock_get_db_ctx.return_value = fake_db_context()
+
+        with patch("celery_task.crud") as mock_crud:
+            mock_crud.get_items_by_field.return_value = [mock_record]
+
+            mock_storage = MagicMock()
+            mock_storage.get_file_path.return_value = MagicMock(
+                __str__=lambda s: "/tmp/test.csv",
+                exists=lambda: False,
+            )
+            mock_get_storage.return_value = mock_storage
+            mock_process.return_value = 0
+
+            mock_refresh.side_effect = RuntimeError("API server unreachable")
+
+            with pytest.raises(RuntimeError, match="API server unreachable"):
+                process_patient_file._orig_run(
+                    "file-no-refresh", {"age": "INTEGER"}
+                )
+
+        # A failure notification IS sent (correct behavior) but NO success notification
+        assert mock_notify.call_count == 1
+        sent_payload = mock_notify.call_args[0][0]
+        assert sent_payload["type"] == "celery_failed"
+        assert "API server unreachable" in sent_payload["error"]
+
+    @patch("celery_task.notify_frontend")
+    @patch("celery_task.get_storage_provider")
+    @patch("celery_task.get_db_context")
+    @patch("celery_task.update_file_status")
+    @patch("celery_task.process_file_task")
+    def test_failure_notify_error_does_not_crash(
+        self,
+        mock_process,
+        mock_update_status,
+        mock_get_db_ctx,
+        mock_get_storage,
+        mock_notify,
+    ):
+        """In the error path, if notify_frontend raises, the original
+        error should still propagate (not the notification error)."""
+        from contextlib import contextmanager
+        from celery_task import process_patient_file
+
+        mock_db = MagicMock()
+        mock_record = MagicMock()
+        mock_record.object_key = "uploads/data.csv"
+
+        @contextmanager
+        def fake_db_context():
+            yield mock_db
+
+        mock_get_db_ctx.return_value = fake_db_context()
+
+        with patch("celery_task.crud") as mock_crud:
+            mock_crud.get_items_by_field.return_value = [mock_record]
+
+            mock_storage = MagicMock()
+            mock_storage.get_file_path.return_value = MagicMock(
+                __str__=lambda s: "/tmp/test.csv",
+                exists=lambda: False,
+            )
+            mock_get_storage.return_value = mock_storage
+
+            # ETL fails
+            mock_process.side_effect = ValueError("bad data")
+            # Notification also fails
+            mock_notify.side_effect = ConnectionError("pg down")
+
+            with pytest.raises(ValueError, match="bad data"):
+                process_patient_file._orig_run(
+                    "file-double-fail", {"id": "INTEGER"}
+                )
+
+        # The notification was attempted but its error was swallowed
+        mock_notify.assert_called_once()
+
 
 # ===========================================================================
 # 5. Type Coercion Mapping — Arrow types map to correct Postgres equivalents

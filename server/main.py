@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from core.deps import init_app_services
-from api import metadata, tables, rows, reflect, validation, corrupted_rows, files, schema
+from api import metadata, tables, rows, reflect, validation, corrupted_rows, files, schema, events
 import core.config as config
 from celery_task import process_patient_file
 
@@ -48,6 +48,7 @@ app.include_router(corrupted_rows.router)
 app.include_router(validation.router)
 app.include_router(metadata.router)
 app.include_router(reflect.router)
+app.include_router(events.router)
 app.include_router(tables.router)
 app.include_router(rows.router)
 app.include_router(files.router)

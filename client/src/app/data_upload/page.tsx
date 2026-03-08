@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useServices } from '@/services';
 import { FILE_UPLOAD } from '@/constants';
@@ -12,12 +12,14 @@ export default function DataUploadPage() {
   const router = useRouter();
   const { authService } = useServices();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [fileId, setFileId] = useState<string | null>(null);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -112,15 +114,17 @@ export default function DataUploadPage() {
           }
         };
         xhr.onerror = () => reject(new Error('Network error occurred'));
+          
       });
 
-      xhr.open('POST', `${baseUrl}/api/files/upload`);
+      xhr.open('POST', `${baseUrl}/files/upload`);
       if (userName) {
         xhr.setRequestHeader('X-User-Name', userName);
       }
       xhr.send(formData);
 
       const { file_id } = await uploadPromise;
+      setFileId(file_id);
 
       setUploadStatus('success');
       setUploadProgress(100);
@@ -137,7 +141,12 @@ export default function DataUploadPage() {
   };
 
   const resetUpload = () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
     setFile(null);
+    setFileId(null);
     setUploadStatus('idle');
     setErrorMessage('');
     setUploadProgress(0);
@@ -145,6 +154,58 @@ export default function DataUploadPage() {
       fileInputRef.current.value = '';
     }
   };
+
+  useEffect(() => {
+    const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
+    if (!fileId) {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      return;
+    }
+
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
+    const streamUrl = `${baseUrl}/api/events/stream?file_id=${encodeURIComponent(fileId)}`;
+    const es = new EventSource(streamUrl);
+    eventSourceRef.current = es;
+
+    const onFailed = (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data || '{}') as { error?: string; message?: string };
+        resetUpload();
+        setUploadStatus('error');
+        setErrorMessage(
+          payload?.error
+            ? `Processing failed. Please upload again. (${payload.error})`
+            : 'Processing failed. Please upload again.'
+        );
+      } catch {
+        resetUpload();
+        setUploadStatus('error');
+        setErrorMessage('Processing failed. Please upload again.');
+      }
+    };
+
+    es.addEventListener('celery_failed', onFailed as EventListener);
+
+    es.onerror = () => {
+      // leave upload state alone; server may not be up yet
+    };
+
+    return () => {
+      es.removeEventListener('celery_failed', onFailed as EventListener);
+      es.close();
+      if (eventSourceRef.current === es) {
+        eventSourceRef.current = null;
+      }
+    };
+  }, [fileId]);
 
   return (
     <div className="min-h-screen bg-white flex items-center justify-center p-6">
