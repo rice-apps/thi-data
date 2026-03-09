@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, PrimaryKeyConstraint
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.pool import NullPool
@@ -61,6 +61,7 @@ def run_migrations():
 def reflect_db():
     """
     Safely reflects the database schema into SQLAlchemy ORM models using a distributed lock.
+    Reflects both the public schema and the DLT dataset schema.
     """
 
     
@@ -70,8 +71,36 @@ def reflect_db():
             lock = create_sadlock(conn, REFRESH_KEY)
             
             with lock:
-                # 2. Perform the actual reflection!
+                # 2. Reflect the public schema
                 Base.prepare(autoload_with=engine)
+
+                # 3. Also reflect the DLT dataset schema so tables like
+                #    final_patient_records are visible to the API.
+                #    DLT tables lack primary keys, so automap won't create
+                #    classes for them unless we designate a surrogate PK.
+                dlt_schema = settings.DLT_DATASET
+                try:
+                    Base.metadata.reflect(bind=engine, schema=dlt_schema)
+
+                    # Set surrogate PK on DLT tables so automap can map them.
+                    # DLT tables have no PK constraints; we designate
+                    # original_csv_row_id (the DLT merge key) as surrogate PK.
+                    for key, table in list(Base.metadata.tables.items()):
+                        if table.schema != dlt_schema:
+                            continue
+                        # Skip DLT internal tables
+                        if table.name.startswith("_dlt_"):
+                            continue
+                        # Use original_csv_row_id as surrogate PK if available
+                        if not list(table.primary_key.columns) and "original_csv_row_id" in table.c:
+                            table.append_constraint(
+                                PrimaryKeyConstraint(table.c.original_csv_row_id)
+                            )
+
+                    Base.prepare(autoload_with=engine)
+                except Exception as e:
+                    logger.warning(f"Could not reflect DLT schema '{dlt_schema}': {e}")
+
         logger.info(f"Tables reflected successfully: {list(Base.classes.keys())}")
     except Exception as e:
         logger.error(f"Error reflecting database: {e}")

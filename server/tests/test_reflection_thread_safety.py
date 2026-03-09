@@ -64,8 +64,11 @@ class TestAdvisoryLock:
         mock_lock.__enter__.assert_called_once()
         mock_lock.__exit__.assert_called_once()
 
-        # Base.prepare was called inside the lock (reflect_db uses initial-load reflection)
-        mock_base.prepare.assert_called_once_with(autoload_with=mock_engine)
+        # Base.prepare was called inside the lock:
+        #  - once for the public schema (initial load)
+        #  - once after reflecting the DLT dataset schema
+        assert mock_base.prepare.call_count == 2
+        mock_base.prepare.assert_any_call(autoload_with=mock_engine)
 
         assert result["message"] == "Database refreshed successfully."
 
@@ -228,8 +231,9 @@ class TestRaceCondition:
         starts = [(name, ts) for name, event, ts in concurrency_log if event == "prepare_start"]
         ends = [(name, ts) for name, event, ts in concurrency_log if event == "prepare_end"]
 
-        assert len(starts) == 2, f"Expected 2 prepare starts, got {len(starts)}"
-        assert len(ends) == 2, f"Expected 2 prepare ends, got {len(ends)}"
+        # reflect_db calls prepare() twice per invocation (public + DLT schema)
+        assert len(starts) == 4, f"Expected 4 prepare starts, got {len(starts)}"
+        assert len(ends) == 4, f"Expected 4 prepare ends, got {len(ends)}"
 
         # The second start must happen after the first end (serialized)
         first_end = min(ts for _, ts in ends)
@@ -340,4 +344,6 @@ class TestSchemaRefreshConsistency:
 
         reflect_db()
 
-        mock_base.prepare.assert_called_once_with(autoload_with=mock_engine)
+        # reflect_db calls prepare() twice: once for public schema, once for DLT schema
+        assert mock_base.prepare.call_count == 2
+        mock_base.prepare.assert_any_call(autoload_with=mock_engine)

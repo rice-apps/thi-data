@@ -331,3 +331,79 @@ class TestSSEGeneratorExhaustion:
             # Generator should be exhausted — StopAsyncIteration
             with pytest.raises(StopAsyncIteration):
                 await anext(agen)
+
+
+# ===========================================================================
+# _get_file_registry_status tests
+# ===========================================================================
+
+class TestGetFileRegistryStatus:
+    """Test the _get_file_registry_status helper function."""
+
+    def test_file_found_returns_dict(self):
+        from api.events import _get_file_registry_status
+
+        mock_record = MagicMock()
+        mock_record.file_id = "f1"
+        mock_record.status = "SUCCESS"
+        mock_record.error_message = None
+        mock_record.target_table_name = "patients"
+
+        mock_repo = MagicMock()
+        mock_repo.get_by_field.return_value = [mock_record]
+
+        mock_db = MagicMock()
+
+        with patch("api.events.get_file_registry_repo", return_value=mock_repo), \
+             patch("api.events.get_db_context") as mock_ctx:
+            mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_db)
+            mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = _get_file_registry_status("f1")
+
+        assert result is not None
+        assert result["file_id"] == "f1"
+        assert result["status"] == "SUCCESS"
+        assert result["target_table_name"] == "patients"
+
+    def test_file_not_found_returns_none(self):
+        from api.events import _get_file_registry_status
+
+        mock_repo = MagicMock()
+        mock_repo.get_by_field.return_value = []
+
+        mock_db = MagicMock()
+
+        with patch("api.events.get_file_registry_repo", return_value=mock_repo), \
+             patch("api.events.get_db_context") as mock_ctx:
+            mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_db)
+            mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = _get_file_registry_status("nonexistent")
+
+        assert result is None
+
+
+# ===========================================================================
+# Stream without file_id
+# ===========================================================================
+
+class TestStreamEventsNoFileId:
+
+    def test_stream_without_file_id_subscribes_with_none(self):
+        """When no file_id is given, the stream should subscribe with None."""
+        from main import app
+
+        with patch("api.events._async_event_stream") as mock_stream:
+            async def _fake_stream(file_id):
+                yield ": keep-alive\n\n"
+
+            mock_stream.side_effect = _fake_stream
+
+            client = TestClient(app)
+            with client.stream("GET", "/api/events/stream") as r:
+                assert r.status_code == 200
+                for line in r.iter_lines():
+                    break  # Just check we get at least one line
+
+            mock_stream.assert_called_once_with(None)

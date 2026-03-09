@@ -80,6 +80,8 @@ def get_size(
             raise HTTPException(status_code=404, detail="Table not found")
         logger.info(f"Size info retrieved for table {table_name}")
         return size_info
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting size for table {table_name}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"Error getting size: {e}")

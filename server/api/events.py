@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from core.config import settings
 from core.enums import FileStatus
+from core.deps import get_db_context, get_file_registry_repo
 
 
 router = APIRouter(prefix="/api/events", tags=["events"])
@@ -31,7 +32,6 @@ def _get_file_registry_status(file_id: str) -> Optional[dict]:
 
     Returns a dict with at least {file_id, status} or None if not found.
     """
-    from core.deps import get_db_context, get_file_registry_repo
     repo = get_file_registry_repo()
     with get_db_context() as db:
         records = repo.get_by_field(db=db, field_name="file_id", value=file_id)

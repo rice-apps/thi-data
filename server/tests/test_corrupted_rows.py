@@ -1,8 +1,9 @@
 """
 Integration tests for the corrupted rows feature.
 
-Tests the complete lifecycle: create, read, delete, and resolve corrupted rows.
-Also tests type validation in the resolve endpoint.
+Tests the resolve endpoint and type validation.
+The resolve endpoint updates the main table record; the sidecar JOIN
+automatically unflags columns once the main value is no longer NULL.
 
 Requires a running server at localhost:8000 with a reflected DB.
 """
@@ -22,7 +23,6 @@ from core.deps import get_db
 from core.database import Base, reflect_db
 from crud.base import BaseRepository, model_to_dict
 from sqlalchemy import Integer, Float, Boolean, String
-CORRUPTED_ROWS_TABLE = "corrupted_rows"
 TARGET_TABLE = "test_database"  # Must have integer 'age' column for validation tests
 API_URL = "http://localhost:8000"
 
@@ -32,88 +32,34 @@ API_URL = "http://localhost:8000"
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="function")
-def setup_corrupted_row():
-    """Create a corrupted row entry and yield its ID, then clean up."""
-    reflect_db()
-    model_class = Base.classes.get(CORRUPTED_ROWS_TABLE)
-    if not model_class:
-        pytest.fail(f"Test setup failed: Could not find model for table '{CORRUPTED_ROWS_TABLE}'")
-
-    db = next(get_db())
-    new_item_data = {
-        "target_table": "test_table",
-        "row_id": "123",
-        "error_reason": "Test corruption message"
-    }
-
-    created_item = None
-    try:
-        created_item = BaseRepository(model_class).create(db, new_item_data)
-        db.commit()
-        db.refresh(created_item)
-        item_id = created_item.id
-        yield item_id
-    finally:
-        if created_item:
-            try:
-                BaseRepository(model_class).delete(db, created_item.id)
-                db.commit()
-            except Exception as e:
-                db.rollback()
-                print(f"Error during teardown: {e}")
-        db.close()
-
-
-@pytest.fixture(scope="function")
-def setup_target_row_with_corruption():
+def setup_target_row():
     """
-    Create a row in test_database with a NULL age (simulating TRY_CAST failure),
-    and a matching corrupted_rows entry. Yields (target_row_id, corrupted_entry_id).
-    Cleans up both on teardown.
+    Create a row in test_database with a NULL age (simulating TRY_CAST failure).
+    Yields the target_row_id. Cleans up on teardown.
     """
     reflect_db()
     target_model = Base.classes.get(TARGET_TABLE)
-    corrupted_model = Base.classes.get(CORRUPTED_ROWS_TABLE)
 
     if not target_model:
         pytest.fail(f"Test setup failed: Could not find model for '{TARGET_TABLE}'")
-    if not corrupted_model:
-        pytest.fail(f"Test setup failed: Could not find model for '{CORRUPTED_ROWS_TABLE}'")
 
     db = next(get_db())
     target_item = None
-    corrupted_item = None
 
     try:
-        # Create a row with NULL age (simulating a corrupted cast)
         target_item = BaseRepository(target_model).create(db, {
             "first_name": "Corrupted",
             "last_name": "TestUser",
             "age": None
         })
-        db.flush()
-        db.refresh(target_item)
-        target_id = target_item.id
-
-        # Create the matching corrupted_rows entry
-        corrupted_item = BaseRepository(corrupted_model).create(db, {
-            "target_table": TARGET_TABLE,
-            "row_id": str(target_id),
-            "error_reason": "TRY_CAST failed: 'abc' is not a valid INTEGER",
-            "error_column": "age"
-        })
         db.commit()
-        db.refresh(corrupted_item)
-
-        yield target_id, corrupted_item.id
+        db.refresh(target_item)
+        yield target_item.id
     finally:
-        # Cleanup
         try:
-            if corrupted_item:
-                BaseRepository(corrupted_model).delete(db, corrupted_item.id)
             if target_item:
                 BaseRepository(target_model).delete(db, target_item.id)
-            db.commit()
+                db.commit()
         except Exception as e:
             db.rollback()
             print(f"Error during teardown: {e}")
@@ -121,116 +67,19 @@ def setup_target_row_with_corruption():
 
 
 # ===========================================================================
-# TEST GROUP 1: Basic CRUD for corrupted_rows
-# ===========================================================================
-
-class TestCorruptedRowsCRUD:
-    """Tests for the basic CRUD endpoints on the corrupted_rows table."""
-
-    def test_create_corrupted_row(self):
-        """POST /api/corrupted_rows creates a new entry and returns it."""
-        payload = {
-            "target_table": "create_test_table",
-            "row_id": "999",
-            "error_reason": "Creation test message"
-        }
-
-        reflect_db()
-        model_class = Base.classes.get(CORRUPTED_ROWS_TABLE)
-        db = next(get_db())
-
-        created_id = None
-        try:
-            r = requests.post(f"{API_URL}/api/corrupted_rows", json=payload)
-            assert r.status_code == 200
-            data = r.json()
-            assert data["target_table"] == payload["target_table"]
-            assert data["error_reason"] == payload["error_reason"]
-            created_id = data["id"]
-        finally:
-            if created_id:
-                try:
-                    BaseRepository(model_class).delete(db, created_id)
-                    db.commit()
-                except Exception as e:
-                    db.rollback()
-            db.close()
-
-    def test_get_corrupted_rows(self, setup_corrupted_row):
-        """GET /api/corrupted_rows returns paginated data with the setup entry."""
-        r = requests.get(f"{API_URL}/api/corrupted_rows")
-        assert r.status_code == 200
-        data = r.json()
-
-        assert "data" in data
-        assert "total" in data
-        assert "page" in data
-        assert "limit" in data
-        assert isinstance(data["data"], list)
-        assert data["total"] >= 1
-
-        # Check if our setup item is in the list
-        setup_id = setup_corrupted_row
-        found = any(item["id"] == setup_id for item in data["data"])
-        assert found
-
-    def test_delete_corrupted_row(self):
-        """DELETE /api/corrupted_rows/{id} removes the entry."""
-        # Setup
-        reflect_db()
-        model_class = Base.classes.get(CORRUPTED_ROWS_TABLE)
-        db = next(get_db())
-        new_item_data = {
-            "target_table": "delete_test_table",
-            "row_id": "456",
-            "error_reason": "Delete test message"
-        }
-        created_item = BaseRepository(model_class).create(db, new_item_data)
-        db.commit()
-        db.refresh(created_item)
-        item_id = created_item.id
-
-        # Test
-        r = requests.delete(f"{API_URL}/api/corrupted_rows/{item_id}")
-        assert r.status_code == 200
-        assert r.json()["message"] == "Corrupted row deleted successfully"
-
-        # Verify deleted
-        r_check = requests.get(f"{API_URL}/api/corrupted_rows")
-        data = r_check.json()
-        found = any(item["id"] == item_id for item in data["data"])
-        assert not found
-        db.close()
-
-    def test_delete_nonexistent_corrupted_row(self):
-        """DELETE /api/corrupted_rows/{id} returns 404 for nonexistent ID."""
-        r = requests.delete(f"{API_URL}/api/corrupted_rows/999999")
-        assert r.status_code == 404
-
-    def test_get_corrupted_rows_pagination(self):
-        """GET /api/corrupted_rows respects skip and limit parameters."""
-        r = requests.get(f"{API_URL}/api/corrupted_rows?skip=0&limit=1")
-        assert r.status_code == 200
-        data = r.json()
-        assert data["limit"] == 1
-        assert len(data["data"]) <= 1
-
-
-# ===========================================================================
-# TEST GROUP 2: Resolve (Heal) Endpoint
+# TEST GROUP 1: Resolve (Heal) Endpoint
 # ===========================================================================
 
 class TestResolveEndpoint:
     """Tests for PATCH /api/{table_name}/{row_id}/resolve."""
 
-    def test_resolve_corrupted_row_success(self, setup_target_row_with_corruption):
+    def test_resolve_corrupted_row_success(self, setup_target_row):
         """
         Resolving with a valid integer value should:
         1. Update the primary record's age
-        2. Delete the corrupted_rows entry
-        3. Return success status
+        2. Return the updated record as a TableRow dict
         """
-        target_id, corrupted_id = setup_target_row_with_corruption
+        target_id = setup_target_row
 
         r = requests.patch(
             f"{API_URL}/api/{TARGET_TABLE}/{target_id}/resolve",
@@ -238,28 +87,18 @@ class TestResolveEndpoint:
         )
         assert r.status_code == 200
         data = r.json()
-        assert data["status"] == "success"
-        assert data["message"] == "Row healed and error log cleared."
-        assert data["updated_record"]["age"] == 25
+        # Response is a flat TableRow, not a status wrapper
+        assert data["age"] == 25
+        assert data["first_name"] == "Corrupted"
+        assert "status" not in data
+        assert "message" not in data
 
-        # Verify the corrupted entry was deleted
-        reflect_db()
-        corrupted_model = Base.classes.get(CORRUPTED_ROWS_TABLE)
-        db = next(get_db())
-        try:
-            remaining = db.query(corrupted_model).filter(
-                corrupted_model.id == corrupted_id
-            ).first()
-            assert remaining is None, "Corrupted entry should be deleted after resolve"
-        finally:
-            db.close()
-
-    def test_resolve_with_invalid_type_rejects(self, setup_target_row_with_corruption):
+    def test_resolve_with_invalid_type_rejects(self, setup_target_row):
         """
         Resolving with 'abc' for an integer column should return 400
         due to type validation.
         """
-        target_id, _ = setup_target_row_with_corruption
+        target_id = setup_target_row
 
         r = requests.patch(
             f"{API_URL}/api/{TARGET_TABLE}/{target_id}/resolve",
@@ -285,9 +124,9 @@ class TestResolveEndpoint:
         )
         assert r.status_code == 404
 
-    def test_resolve_nonexistent_column(self, setup_target_row_with_corruption):
+    def test_resolve_nonexistent_column(self, setup_target_row):
         """Resolving with a column that doesn't exist returns 400."""
-        target_id, _ = setup_target_row_with_corruption
+        target_id = setup_target_row
 
         r = requests.patch(
             f"{API_URL}/api/{TARGET_TABLE}/{target_id}/resolve",
@@ -296,20 +135,21 @@ class TestResolveEndpoint:
         assert r.status_code == 400
         assert "does not exist" in r.json()["detail"]
 
-    def test_resolve_with_valid_integer_string(self, setup_target_row_with_corruption):
+    def test_resolve_with_valid_integer_string(self, setup_target_row):
         """A string that represents a valid integer ('42') should be accepted and cast."""
-        target_id, _ = setup_target_row_with_corruption
+        target_id = setup_target_row
 
         r = requests.patch(
             f"{API_URL}/api/{TARGET_TABLE}/{target_id}/resolve",
             json={"corrections": {"age": "42"}}
         )
         assert r.status_code == 200
-        assert r.json()["updated_record"]["age"] == 42
+        # Response is a flat TableRow
+        assert r.json()["age"] == 42
 
 
 # ===========================================================================
-# TEST GROUP 3: Type Validation Unit Tests (no server required)
+# TEST GROUP 2: Type Validation Unit Tests (no server required)
 # ===========================================================================
 
 class TestTypeValidation:
@@ -360,12 +200,12 @@ class TestTypeValidation:
 
 
 # ===========================================================================
-# TEST GROUP 4: ETL Sidecar — All rows in clean table (Fix 1 verification)
+# TEST GROUP 3: ETL Sidecar — All rows in clean table
 # ===========================================================================
 
 class TestETLSidecarBehavior:
     """
-    Verify that after Fix 1, ALL rows land in the clean table
+    Verify that ALL rows land in the clean table
     (corrupted values as NULL via TRY_CAST) AND in corrupted_rows.
     Uses in-memory DuckDB — no Postgres or dlt required.
     """
@@ -404,7 +244,7 @@ class TestETLSidecarBehavior:
 
     def test_all_rows_in_clean_table_including_corrupted(self, duckdb_con):
         """
-        After Fix 1: Every row—including corrupted ones—should exist in clean_data.
+        Every row—including corrupted ones—should exist in clean_data.
         Corrupted values should be NULL (via TRY_CAST).
         """
         columns = ["name", "age"]
@@ -417,7 +257,7 @@ class TestETLSidecarBehavior:
         error_count = self._seed_and_validate(duckdb_con, columns, rows, {"name": "VARCHAR", "age": "INTEGER"})
         assert error_count == 1  # Only Bob
 
-        # ALL 3 rows should be in clean_data (Fix 1)
+        # ALL 3 rows should be in clean_data
         clean_count = duckdb_con.execute("SELECT COUNT(*) FROM clean_data").fetchone()[0]
         assert clean_count == 3, f"Expected 3 rows in clean_data (all rows), got {clean_count}"
 
@@ -466,7 +306,7 @@ class TestETLSidecarBehavior:
 
 
 # ===========================================================================
-# TEST GROUP 5: Resolve request body shape (unit tests)
+# TEST GROUP 4: Resolve request body shape (unit tests)
 # ===========================================================================
 
 class TestResolveRequestBody:
@@ -514,7 +354,6 @@ class TestResolveRequestBody:
         with patch("api.corrupted_rows.get_internal_model_class") as mock_get_model:
             mock_get_model.return_value = mock_model
             mock_db.query.return_value.filter.return_value.first.return_value = mock_record
-            mock_db.query.return_value.filter.return_value.all.return_value = []
 
             mock_mapper = MagicMock()
             mock_col_attr = MagicMock()
@@ -534,7 +373,10 @@ class TestResolveRequestBody:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["status"] == "success"
+        # Response is now a flat TableRow dict
+        assert data["id"] == 1
+        assert data["name"] == "Alice"
+        assert "status" not in data
 
 
 class TestResolveNoDoubleCommit:

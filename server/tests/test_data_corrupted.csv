@@ -1,0 +1,6 @@
+patient_id,name,age,blood_pressure,admission_date
+P001,Alice Smith,30,120,2025-01-15
+P002,Bob Jones,abc,130,2025-02-20
+P003,Carol Lee,45,HIGH,2025-03-10
+P004,Dave Kim,28,110,not-a-date
+P005,Eve Park,35,140,2025-04-25

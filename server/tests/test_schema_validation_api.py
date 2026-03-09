@@ -302,6 +302,76 @@ class TestValidateSchemaEndpoint:
         response = client.post("/api/validate_schema", params={"file_id": "missing"})
         assert response.status_code == 404
 
+    def test_validate_schema_storage_file_not_found(self):
+        """Should return 404 when storage get_file_path returns None."""
+        from fastapi.testclient import TestClient
+        from api.validation import router
+        from fastapi import FastAPI
+        from core.deps import get_db, get_storage_provider, get_file_registry_repo
+
+        app = FastAPI()
+        app.include_router(router)
+
+        mock_db = MagicMock()
+        def override_get_db():
+            yield mock_db
+        app.dependency_overrides[get_db] = override_get_db
+
+        mock_storage = MagicMock()
+        mock_storage.get_file_path.return_value = None
+        app.dependency_overrides[get_storage_provider] = lambda: mock_storage
+
+        mock_repo = MagicMock()
+        mock_record = MagicMock()
+        mock_record.object_key = "uploads/test.csv"
+        mock_repo.get_by_field.return_value = [mock_record]
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        client = TestClient(app)
+        response = client.post("/api/validate_schema", params={"file_id": "f1"})
+        assert response.status_code == 404
+        assert "not found in storage" in response.json()["detail"].lower()
+
+    def test_validate_schema_frictionless_failure_updates_status(self):
+        """Should update status to FRICTIONLESS_FAILED on inference exception and return 500."""
+        from fastapi.testclient import TestClient
+        from api.validation import router
+        from fastapi import FastAPI
+        from core.deps import get_db, get_storage_provider, get_file_registry_repo
+        from pathlib import Path
+
+        app = FastAPI()
+        app.include_router(router)
+
+        mock_db = MagicMock()
+        def override_get_db():
+            yield mock_db
+        app.dependency_overrides[get_db] = override_get_db
+
+        mock_storage = MagicMock()
+        mock_storage.get_file_path.return_value = Path("/tmp/test.csv")
+        app.dependency_overrides[get_storage_provider] = lambda: mock_storage
+
+        mock_repo = MagicMock()
+        mock_record = MagicMock()
+        mock_record.object_key = "uploads/test.csv"
+        mock_repo.get_by_field.return_value = [mock_record]
+        mock_repo.update_by_field.return_value = 1
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        with patch("api.validation.infer_from_file", side_effect=Exception("parse error")):
+            client = TestClient(app)
+            response = client.post("/api/validate_schema", params={"file_id": "f1"})
+
+        assert response.status_code == 500
+        # Verify status was updated to FRICTIONLESS_FAILED
+        update_calls = mock_repo.update_by_field.call_args_list
+        assert any(
+            c.kwargs.get("update_data", {}).get("status") == FileStatus.FRICTIONLESS_FAILED
+            or (c[1].get("update_data", {}).get("status") == FileStatus.FRICTIONLESS_FAILED if len(c) > 1 else False)
+            for c in update_calls
+        )
+
 
 # ===========================================================================
 # 4. Integration Tests: Full flow (requires docker compose up)

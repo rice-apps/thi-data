@@ -1,22 +1,10 @@
 -- Idempotent migration script for thi-data tables
 
 -- Ensure pg_crypto for gen_random_uuid() if needed (built-in in PG 13+)
--- CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- CREATE EXTENSION IF NOT EXISTS "pgcrypto"
 
-CREATE TABLE IF NOT EXISTS public.corrupted_rows (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  target_table text NOT NULL,
-  raw_row jsonb,
-  corrected_row jsonb,
-  error_reason text,
-  error_column text,
-  created_at timestamp with time zone DEFAULT now(),
-  resolved_at timestamp with time zone,
-  resolved_by text,
-  row_id bigint,
-  original_csv_row_id bigint,
-  CONSTRAINT corrupted_rows_pkey PRIMARY KEY (id)
-);
+-- Clean up legacy corrupted_rows table so it doesn't shadow DLT's version
+DROP TABLE IF EXISTS public.corrupted_rows;
 
 CREATE TABLE IF NOT EXISTS public.file_registry (
   file_id uuid NOT NULL DEFAULT gen_random_uuid(),

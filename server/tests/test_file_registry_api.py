@@ -72,6 +72,38 @@ def test_delete_file_registry(setup_file_registry):
     db.close()
     assert len(records) == 0
 
+def test_delete_file_verifies_storage_cleanup():
+    """Upload a file, delete it, verify it's gone from storage listing."""
+    test_file_path = os.path.join(current_dir, "test_cleanup.txt")
+    with open(test_file_path, "w") as f:
+        f.write("cleanup test file")
+
+    try:
+        # Upload
+        with open(test_file_path, "rb") as f:
+            files = {"file": ("test_cleanup.txt", f, "text/plain")}
+            r = requests.post(f"{API_URL}/api/files/upload", files=files)
+
+        if r.status_code != 200:
+            pytest.skip(f"Upload failed: {r.status_code} {r.text}")
+
+        file_id = r.json()["file_id"]
+        object_key = r.json()["object_key"]
+
+        # Delete
+        r = requests.delete(f"{API_URL}/api/files", params={"file_id": file_id})
+        assert r.status_code == 200
+
+        # Verify gone from storage listing
+        r = requests.get(f"{API_URL}/api/files")
+        assert r.status_code == 200
+        file_keys = [f.get("key", f.get("Key", "")) for f in r.json()]
+        assert object_key not in file_keys
+    finally:
+        if os.path.exists(test_file_path):
+            os.remove(test_file_path)
+
+
 def test_upload_file():
     test_file_path = os.path.join(current_dir, "test_file.txt")
     with open(test_file_path, "w") as f:
