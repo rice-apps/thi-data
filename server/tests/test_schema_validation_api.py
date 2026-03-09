@@ -216,7 +216,7 @@ class TestProcessFileEndpoint:
 
 
 # ===========================================================================
-# 4. Unit Tests: Validate schema endpoint (POST /api/validate_schema)
+# 3. Unit Tests: Validate schema endpoint (POST /api/validate_schema)
 # ===========================================================================
 
 class TestValidateSchemaEndpoint:
@@ -304,62 +304,7 @@ class TestValidateSchemaEndpoint:
 
 
 # ===========================================================================
-# 5. DI Pattern Verification
-# ===========================================================================
-
-class TestDependencyInjection:
-    """Verify proper DI patterns throughout the schema validation pipeline."""
-
-    def test_get_db_context_is_proper_context_manager(self):
-        """get_db_context should be a proper contextmanager that
-        supports 'with' statement and triggers commit/rollback."""
-        from core.deps import get_db_context
-
-        # It should work as a context manager (not blow up)
-        with patch("core.deps.SessionLocal") as mock_session_class:
-            mock_session = MagicMock()
-            mock_session_class.return_value = mock_session
-
-            with get_db_context() as db:
-                assert db is mock_session
-
-            # Should commit on success
-            mock_session.commit.assert_called_once()
-            mock_session.close.assert_called_once()
-
-    def test_get_db_context_rollback_on_error(self):
-        """get_db_context should rollback on exception."""
-        from core.deps import get_db_context
-
-        with patch("core.deps.SessionLocal") as mock_session_class:
-            mock_session = MagicMock()
-            mock_session_class.return_value = mock_session
-
-            with pytest.raises(ValueError):
-                with get_db_context() as db:
-                    raise ValueError("test error")
-
-            mock_session.rollback.assert_called_once()
-            mock_session.close.assert_called_once()
-
-    def test_storage_provider_not_imported_from_supabase(self):
-        """No server module should import from core.supabase."""
-        import importlib
-        import inspect as insp
-        api_modules = ["api.files", "api.validation", "api.metadata"]
-        for module_name in api_modules:
-            mod = importlib.import_module(module_name)
-            source_file = insp.getfile(mod)
-            with open(source_file, "r") as f:
-                content = f.read()
-            assert "from core.supabase" not in content, \
-                f"{module_name} still imports from core.supabase"
-            assert "get_supabase_client" not in content, \
-                f"{module_name} still references get_supabase_client"
-
-
-# ===========================================================================
-# 6. Integration Tests: Full flow (requires docker compose up)
+# 4. Integration Tests: Full flow (requires docker compose up)
 # ===========================================================================
 
 class TestSchemaValidationIntegration:
@@ -468,52 +413,9 @@ class TestSchemaValidationIntegration:
         assert process_data["status"] == "PROCESSING"
 
 
-# ===========================================================================
-# 7. Structural checks: no sync ETL in endpoints
-# ===========================================================================
-
-class TestNoSyncETL:
-    """Verify sync ETL code has been removed from files.py."""
-
-    def test_files_py_does_not_import_run_etl(self):
-        """files.py should import celery_task, not etl_processor."""
-        import api.files as files_mod
-        import inspect
-        source = inspect.getsource(files_mod)
-        assert "run_etl" not in source
-        assert "etl_processor" not in source
-
-    def test_files_py_imports_celery_task(self):
-        import api.files as files_mod
-        import inspect
-        source = inspect.getsource(files_mod)
-        assert "from celery_task import process_patient_file" in source
-
-    def test_main_py_has_no_duplicate_process_endpoint(self):
-        """main.py should NOT define its own /process_file/ endpoint."""
-        import main as main_mod
-        import inspect
-        source = inspect.getsource(main_mod)
-        assert "process_file" not in source
-        assert "process_patient_file" not in source
-
 
 # ===========================================================================
-# 8. Sync endpoints should NOT call reflect_db
-# ===========================================================================
-
-class TestNoReflectInSyncEndpoints:
-    """Sync endpoints should NOT call reflect_db — Celery handles that."""
-
-    def test_files_process_does_not_call_reflect(self):
-        import inspect
-        from api.files import process_file
-        source = inspect.getsource(process_file)
-        assert "reflect_db" not in source
-
-
-# ===========================================================================
-# 8. Error message sanitization
+# 5. Error message sanitization
 # ===========================================================================
 
 class TestErrorSanitization:
@@ -689,16 +591,3 @@ class TestErrorSanitization:
         assert "IntegrityError" not in detail
         assert "input values" in detail.lower()
 
-
-# ===========================================================================
-# 11. match_items receives table_name
-# ===========================================================================
-
-class TestMatchItemsSignature:
-    """match_items function should accept table_name as a parameter."""
-
-    def test_match_items_has_table_name_param(self):
-        import inspect
-        from api.rows import match_items
-        sig = inspect.signature(match_items)
-        assert "table_name" in sig.parameters

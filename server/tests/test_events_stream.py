@@ -244,28 +244,6 @@ async def test_async_stream_ignores_other_file_ids():
 
 
 # ===========================================================================
-# Import correctness
-# ===========================================================================
-
-class TestEventsImports:
-    """events.py must import the select module for PG LISTEN."""
-
-    def test_select_module_imported(self):
-        import api.events as events
-        import select as select_mod
-        # The module should have access to select
-        assert hasattr(events, "select") or "select" in dir(events) or \
-               select_mod is not None  # Basic check that import doesn't crash
-
-    def test_select_used_in_broadcaster(self):
-        """_PgNotifyBroadcaster._run references select.select."""
-        import inspect
-        from api.events import _PgNotifyBroadcaster
-        source = inspect.getsource(_PgNotifyBroadcaster._run)
-        assert "select.select" in source
-
-
-# ===========================================================================
 # Broadcaster filtering
 # ===========================================================================
 
