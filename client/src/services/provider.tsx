@@ -22,8 +22,10 @@ type ServiceProviderProps = {
  */
 export function ServiceProvider({ children, services }: ServiceProviderProps) {
   const contextValue = useMemo(() => {
-    const authService = services?.authService ?? ServiceFactory.getAuthService();
-    const dataService = services?.dataService ?? ServiceFactory.getDataService(authService);
+    const authService =
+      services?.authService ?? ServiceFactory.getAuthService();
+    const dataService =
+      services?.dataService ?? ServiceFactory.getDataService(authService);
     return { authService, dataService };
   }, [services]);
 

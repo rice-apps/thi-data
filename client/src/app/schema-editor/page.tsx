@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useServices } from '@/services';
 import { useProcessing } from '@/components/ProcessingProvider';
@@ -45,7 +45,7 @@ const frictionlessTypeToDuckdbType = (frictionlessType?: string): string => {
   }
 };
 
-export default function SchemaEditorPage() {
+function SchemaEditorContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { dataService } = useServices();
@@ -258,5 +258,19 @@ export default function SchemaEditorPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function SchemaEditorPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center p-6 text-slate-500">
+          Loading editor...
+        </div>
+      }
+    >
+      <SchemaEditorContent />
+    </Suspense>
   );
 }

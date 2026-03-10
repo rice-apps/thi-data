@@ -16,7 +16,8 @@ type ButtonProps = {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary: `bg-gradient-to-r from-[${COLORS.PRIMARY}] to-[${COLORS.PRIMARY_DARK}] text-white hover:shadow-lg hover:shadow-blue-500/25`,
-  secondary: 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50',
+  secondary:
+    'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50',
   danger: 'bg-red-600 text-white hover:bg-red-700',
   ghost: 'text-slate-600 hover:bg-slate-100',
 };

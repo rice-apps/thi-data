@@ -1,6 +1,5 @@
 import type {
   TableRow,
-  TableCellValue,
   TableMetadata,
   PaginationParams,
   PaginatedResponse,
@@ -31,7 +30,8 @@ export class HttpDataService implements IDataService {
 
   constructor(authProvider: AuthProvider, baseUrl?: string) {
     this.authProvider = authProvider;
-    const url = baseUrl || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const url =
+      baseUrl || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
     this.httpClient = new HttpClient({
       baseUrl: `${url.replace(/\/$/, '')}/api`,
     });
@@ -47,16 +47,23 @@ export class HttpDataService implements IDataService {
 
   async getTablesWithMetadata(): Promise<{ tables: TableMetadata[] }> {
     const headers = await this.getAuthHeaders();
-    return this.httpClient.get<{ tables: TableMetadata[] }>('tables_with_metadata', {
-      cache: 'no-store',
-      headers,
-    });
+    return this.httpClient.get<{ tables: TableMetadata[] }>(
+      'tables_with_metadata',
+      {
+        cache: 'no-store',
+        headers,
+      }
+    );
   }
 
   async validateSchema(fileId: string): Promise<ValidateSchemaResponse> {
     const headers = await this.getAuthHeaders();
     const query = new URLSearchParams({ file_id: fileId });
-    return this.httpClient.post<ValidateSchemaResponse>(`validate_schema?${query}`, undefined, { headers });
+    return this.httpClient.post<ValidateSchemaResponse>(
+      `validate_schema?${query}`,
+      undefined,
+      { headers }
+    );
   }
 
   async updateFileRegistry(
@@ -148,20 +155,13 @@ export class HttpDataService implements IDataService {
     data: Partial<TableRow>
   ): Promise<TableRow> {
     const headers = await this.getAuthHeaders();
-    return this.httpClient.put<TableRow>(`${tableName}/${id}`, data, { headers });
+    return this.httpClient.put<TableRow>(`${tableName}/${id}`, data, {
+      headers,
+    });
   }
 
   async deleteRow(tableName: string, id: string | number): Promise<void> {
     const headers = await this.getAuthHeaders();
     await this.httpClient.delete(`${tableName}/${id}`, { headers });
-  }
-
-  async resolveCorruptedRow(
-    tableName: string,
-    rowId: string | number,
-    fixes: Record<string, TableCellValue>
-  ): Promise<TableRow> {
-    const headers = await this.getAuthHeaders();
-    return this.httpClient.patch<TableRow>(`${tableName}/${rowId}/resolve`, { corrections: fixes }, { headers });
   }
 }

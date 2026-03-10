@@ -54,7 +54,9 @@ export default function DataUploadPage() {
       !FILE_UPLOAD.ALLOWED_TYPES.includes(selectedFile.type) &&
       !FILE_UPLOAD.ALLOWED_EXTENSIONS.includes(fileExtension)
     ) {
-      setErrorMessage(`Please upload a valid file (${FILE_UPLOAD.ALLOWED_EXTENSIONS.join(', ')})`);
+      setErrorMessage(
+        `Please upload a valid file (${FILE_UPLOAD.ALLOWED_EXTENSIONS.join(', ')})`
+      );
       setUploadStatus('error');
       return;
     }
@@ -80,7 +82,8 @@ export default function DataUploadPage() {
       formData.append('file', file);
 
       const userName = await authService.getCurrentUserName();
-      const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const baseUrl =
+        process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
       const xhr = new XMLHttpRequest();
 
@@ -91,29 +94,40 @@ export default function DataUploadPage() {
         }
       });
 
-      const uploadPromise = new Promise<{ file_id: string }>((resolve, reject) => {
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const data = JSON.parse(xhr.responseText || '{}') as {
-                file_id?: string;
-              };
-              if (!data.file_id) {
-                reject(new Error('Upload succeeded, but no file_id was returned'));
-                return;
+      const uploadPromise = new Promise<{ file_id: string }>(
+        (resolve, reject) => {
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                const data = JSON.parse(xhr.responseText || '{}') as {
+                  file_id?: string;
+                };
+                if (!data.file_id) {
+                  reject(
+                    new Error('Upload succeeded, but no file_id was returned')
+                  );
+                  return;
+                }
+                resolve({ file_id: data.file_id });
+              } catch {
+                reject(
+                  new Error(
+                    'Upload succeeded, but the response was not valid JSON'
+                  )
+                );
               }
-              resolve({ file_id: data.file_id });
-            } catch {
-              reject(new Error('Upload succeeded, but the response was not valid JSON'));
+            } else {
+              const errorData = JSON.parse(xhr.responseText || '{}');
+              reject(
+                new Error(
+                  errorData.detail || `Upload failed: ${xhr.statusText}`
+                )
+              );
             }
-          } else {
-            const errorData = JSON.parse(xhr.responseText || '{}');
-            reject(new Error(errorData.detail || `Upload failed: ${xhr.statusText}`));
-          }
-        };
-        xhr.onerror = () => reject(new Error('Network error occurred'));
-          
-      });
+          };
+          xhr.onerror = () => reject(new Error('Network error occurred'));
+        }
+      );
 
       xhr.open('POST', `${baseUrl}/files/upload`);
       if (userName) {
@@ -205,12 +219,25 @@ export default function DataUploadPage() {
           {/* Uploaded File Section */}
           {file && (
             <div className="mt-8">
-              <h3 className="text-lg font-medium text-slate-900 mb-2">Uploaded File</h3>
+              <h3 className="text-lg font-medium text-slate-900 mb-2">
+                Uploaded File
+              </h3>
               <div className="flex items-center justify-between border-[2px] border-[#68B96A] rounded p-3 bg-[#F1F8E9]">
                 <div className="text-[#68B96A]">
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <svg
+                    width="28"
+                    height="28"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
                     <circle cx="12" cy="12" r="10" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.5 12.5L10.5 14.5L15.5 9.5" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M8.5 12.5L10.5 14.5L15.5 9.5"
+                    />
                   </svg>
                 </div>
                 <span className="flex-1 px-4 text-slate-900 font-semibold text-lg truncate">
@@ -220,7 +247,16 @@ export default function DataUploadPage() {
                   onClick={resetUpload}
                   className="text-slate-700 hover:text-red-600 transition-colors"
                 >
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <polyline points="3 6 5 6 21 6" />
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                     <line x1="10" y1="11" x2="10" y2="17" />

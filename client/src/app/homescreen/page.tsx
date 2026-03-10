@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useServices } from '@/services';
+import { useProcessing } from '@/components/ProcessingProvider';
 import { COLORS, BRANDING } from '@/constants';
 import { Spinner } from '@/components/Spinner';
 import { SearchInput } from '@/components/SearchInput';
@@ -13,19 +14,24 @@ import { signOutAction } from '../auth/actions';
 export default function HomeScreen() {
   const router = useRouter();
   const { dataService } = useServices();
+  const { lastSuccessTimestamp } = useProcessing();
   const [tables, setTables] = useState<TableMetadata[]>([]);
   const [search, setSearch] = useState('');
   const [hoveredTable, setHoveredTable] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [fabHovered, setFabHovered] = useState(false);
 
-  useEffect(() => {
+  const fetchTables = useCallback(() => {
     dataService
       .getTablesWithMetadata()
       .then((data) => setTables(data.tables))
       .catch((error) => console.error(error))
       .finally(() => setLoading(false));
   }, [dataService]);
+
+  useEffect(() => {
+    fetchTables();
+  }, [fetchTables, lastSuccessTimestamp]);
 
   const filteredTables = tables.filter((table) =>
     table?.name?.toLowerCase().includes(search.toLowerCase())
@@ -42,7 +48,9 @@ export default function HomeScreen() {
           <div className="flex items-center gap-3">
             <div
               className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ background: `linear-gradient(to bottom right, ${COLORS.PRIMARY}, ${COLORS.PRIMARY_DARK})` }}
+              style={{
+                background: `linear-gradient(to bottom right, ${COLORS.PRIMARY}, ${COLORS.PRIMARY_DARK})`,
+              }}
             >
               <span className="text-white font-bold text-lg">T</span>
             </div>
@@ -107,16 +115,24 @@ export default function HomeScreen() {
                   <div className="col-span-4 font-medium text-slate-800">
                     {table.name}
                   </div>
-                  <div className={`col-span-2 ${table.uploadedBy ? 'text-slate-600' : 'text-slate-400 italic'}`}>
+                  <div
+                    className={`col-span-2 ${table.uploadedBy ? 'text-slate-600' : 'text-slate-400 italic'}`}
+                  >
                     {formatValue(table.uploadedBy)}
                   </div>
-                  <div className={`col-span-2 ${table.dateUploaded ? 'text-slate-600' : 'text-slate-400 italic'}`}>
+                  <div
+                    className={`col-span-2 ${table.dateUploaded ? 'text-slate-600' : 'text-slate-400 italic'}`}
+                  >
                     {formatValue(table.dateUploaded)}
                   </div>
-                  <div className={`col-span-2 ${table.dateModified ? 'text-slate-600' : 'text-slate-400 italic'}`}>
+                  <div
+                    className={`col-span-2 ${table.dateModified ? 'text-slate-600' : 'text-slate-400 italic'}`}
+                  >
                     {formatValue(table.dateModified)}
                   </div>
-                  <div className={`col-span-2 text-right ${table.size ? 'text-slate-600' : 'text-slate-400 italic'}`}>
+                  <div
+                    className={`col-span-2 text-right ${table.size ? 'text-slate-600' : 'text-slate-400 italic'}`}
+                  >
                     <span className="inline-flex items-center gap-1">
                       {table.size && (
                         <svg
@@ -149,9 +165,13 @@ export default function HomeScreen() {
         onMouseEnter={() => setFabHovered(true)}
         onMouseLeave={() => setFabHovered(false)}
         className={`fixed bottom-8 right-8 h-14 text-white font-medium rounded-full shadow-lg hover:shadow-xl hover:shadow-blue-500/25 transition-all duration-300 flex items-center overflow-hidden ${
-          fabHovered ? 'w-40 pl-4 pr-5 justify-start gap-2' : 'w-14 justify-center'
+          fabHovered
+            ? 'w-40 pl-4 pr-5 justify-start gap-2'
+            : 'w-14 justify-center'
         }`}
-        style={{ background: `linear-gradient(to right, ${COLORS.PRIMARY}, ${COLORS.PRIMARY_DARK})` }}
+        style={{
+          background: `linear-gradient(to right, ${COLORS.PRIMARY}, ${COLORS.PRIMARY_DARK})`,
+        }}
       >
         <svg
           className="w-6 h-6 flex-shrink-0"

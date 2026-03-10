@@ -34,7 +34,11 @@ export class NetworkError extends Error {
 export class ValidationError extends ApiError {
   public readonly fields?: Record<string, string[]>;
 
-  constructor(message: string, fields?: Record<string, string[]>, data?: unknown) {
+  constructor(
+    message: string,
+    fields?: Record<string, string[]>,
+    data?: unknown
+  ) {
     super(message, 400, data);
     this.name = 'ValidationError';
     this.fields = fields;

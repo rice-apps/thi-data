@@ -27,7 +27,12 @@ export function ConfirmModal({
   loading = false,
 }: ConfirmModalProps) {
   return (
-    <Modal isOpen={isOpen} onClose={onClose} disableClose={loading} className="max-w-sm">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      disableClose={loading}
+      className="max-w-sm"
+    >
       <ModalBody className="text-center py-6">
         <h3 className="text-lg font-semibold text-slate-800 mb-2">{title}</h3>
         <p className="text-slate-500">{message}</p>

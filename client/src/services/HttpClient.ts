@@ -85,7 +85,10 @@ export class HttpClient {
       }
 
       if (error instanceof TypeError) {
-        throw new NetworkError('Network error. Please check your connection.', error);
+        throw new NetworkError(
+          'Network error. Please check your connection.',
+          error
+        );
       }
 
       throw error;
@@ -96,15 +99,27 @@ export class HttpClient {
     return this.request<T>('GET', endpoint, undefined, options);
   }
 
-  async post<T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T> {
+  async post<T>(
+    endpoint: string,
+    body?: unknown,
+    options?: RequestOptions
+  ): Promise<T> {
     return this.request<T>('POST', endpoint, body, options);
   }
 
-  async put<T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T> {
+  async put<T>(
+    endpoint: string,
+    body?: unknown,
+    options?: RequestOptions
+  ): Promise<T> {
     return this.request<T>('PUT', endpoint, body, options);
   }
 
-  async patch<T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T> {
+  async patch<T>(
+    endpoint: string,
+    body?: unknown,
+    options?: RequestOptions
+  ): Promise<T> {
     return this.request<T>('PATCH', endpoint, body, options);
   }
 

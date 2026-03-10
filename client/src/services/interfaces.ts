@@ -1,12 +1,14 @@
 import type {
   TableRow,
-  TableCellValue,
   TableMetadata,
   PaginationParams,
   PaginatedResponse,
   TableSchemaResponse,
 } from '@/types';
-import type { ValidateSchemaResponse, FileRegistryUpdate } from './HttpDataService';
+import type {
+  ValidateSchemaResponse,
+  FileRegistryUpdate,
+} from './HttpDataService';
 
 /**
  * Minimal type for dependency injection of auth into data services.
@@ -48,11 +50,7 @@ export interface IDataService {
     data: Partial<TableRow>
   ): Promise<TableRow>;
   deleteRow(tableName: string, id: string | number): Promise<void>;
-  resolveCorruptedRow(
-    tableName: string,
-    rowId: string | number,
-    fixes: Record<string, TableCellValue>
-  ): Promise<TableRow>;
+
   validateSchema(fileId: string): Promise<ValidateSchemaResponse>;
   updateFileRegistry(
     fileId: string,

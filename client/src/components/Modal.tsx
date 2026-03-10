@@ -87,15 +87,29 @@ export function Modal({
   );
 }
 
-export function ModalBody({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+export function ModalBody({
+  children,
+  className = '',
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <div className={`px-6 py-4 overflow-y-auto ${className}`}>{children}</div>
   );
 }
 
-export function ModalFooter({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+export function ModalFooter({
+  children,
+  className = '',
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className={`px-6 py-4 border-t border-slate-200 flex justify-end gap-2 ${className}`}>
+    <div
+      className={`px-6 py-4 border-t border-slate-200 flex justify-end gap-2 ${className}`}
+    >
       {children}
     </div>
   );

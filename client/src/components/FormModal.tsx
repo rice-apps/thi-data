@@ -41,7 +41,12 @@ export function FormModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={title} disableClose={loading}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={title}
+      disableClose={loading}
+    >
       <form onSubmit={handleSubmit}>
         <ModalBody className="space-y-4">
           {fields.map((field) => (
@@ -54,7 +59,9 @@ export function FormModal({
                 type={field.type || 'text'}
                 value={field.value}
                 onChange={(e) => onChange(field.name, e.target.value)}
-                placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
+                placeholder={
+                  field.placeholder || `Enter ${field.label.toLowerCase()}`
+                }
                 className={`
                   w-full px-4 py-2 text-slate-700 bg-slate-50 border rounded-xl
                   focus:outline-none focus:ring-2 focus:ring-[#1c66bb]/30 focus:border-[#1c66bb]
@@ -66,7 +73,12 @@ export function FormModal({
           ))}
         </ModalBody>
         <ModalFooter>
-          <Button variant="ghost" onClick={onClose} disabled={loading} type="button">
+          <Button
+            variant="ghost"
+            onClick={onClose}
+            disabled={loading}
+            type="button"
+          >
             {cancelLabel}
           </Button>
           <Button variant="primary" type="submit" loading={loading}>

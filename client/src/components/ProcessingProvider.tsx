@@ -1,10 +1,17 @@
 'use client';
 
-import React, { createContext, useContext, useCallback, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useCallback,
+  useRef,
+  useState,
+} from 'react';
 import { Toast } from './Toast';
 
 type ProcessingContextValue = {
   startProcessing: (fileId: string) => void;
+  lastSuccessTimestamp: number | null;
 };
 
 const ProcessingContext = createContext<ProcessingContextValue | null>(null);
@@ -14,9 +21,16 @@ type ToastState = {
   type: 'success' | 'error';
 } | null;
 
-export function ProcessingProvider({ children }: { children: React.ReactNode }) {
+export function ProcessingProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
+  const [lastSuccessTimestamp, setLastSuccessTimestamp] = useState<
+    number | null
+  >(null);
 
   const startProcessing = useCallback((fileId: string) => {
     // Close any existing connection
@@ -25,7 +39,8 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
       eventSourceRef.current = null;
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const baseUrl =
+      process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
     const streamUrl = `${baseUrl}/api/events/stream?file_id=${encodeURIComponent(fileId)}`;
     const es = new EventSource(streamUrl);
     eventSourceRef.current = es;
@@ -39,6 +54,7 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
 
     es.addEventListener('celery_success', () => {
       setToast({ message: 'Your file has been processed!', type: 'success' });
+      setLastSuccessTimestamp(Date.now());
       cleanup();
     });
 
@@ -62,7 +78,9 @@ export function ProcessingProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   return (
-    <ProcessingContext.Provider value={{ startProcessing }}>
+    <ProcessingContext.Provider
+      value={{ startProcessing, lastSuccessTimestamp }}
+    >
       {children}
       {toast && (
         <Toast
