@@ -19,6 +19,38 @@ Base = automap_base()
 
 REFRESH_KEY = 'db_reflection_schema_refresh'
 
+# Schema-aware class registry: (schema, table_name) -> mapped class
+_schema_class_map = {}
+
+def _rebuild_class_map():
+    """Rebuild the schema-qualified class map after Base.prepare().
+    Uses atomic reference swap so readers never see a partial dict."""
+    new_map = {}
+    for name, cls in Base.classes.items():
+        schema = cls.__table__.schema or "public"
+        new_map[(schema, name)] = cls
+    global _schema_class_map
+    _schema_class_map = new_map
+
+def get_class(table_name, schema=None):
+    """Look up a reflected class by table name.
+    If schema is None, checks DLT schema first, then public."""
+    if schema is not None:
+        return _schema_class_map.get((schema, table_name))
+    # DLT first, then public
+    return (
+        _schema_class_map.get((settings.DLT_DATASET, table_name))
+        or _schema_class_map.get(("public", table_name))
+    )
+
+def get_class_strict(table_name, schema):
+    """Look up a reflected class requiring an explicit schema."""
+    return _schema_class_map.get((schema, table_name))
+
+def is_dlt_table(model_class):
+    """Check whether a mapped class belongs to the DLT dataset schema."""
+    return model_class.__table__.schema == settings.DLT_DATASET
+
 def run_migrations():
     """
     Executes the idempotent SQL migration script.
@@ -63,8 +95,6 @@ def reflect_db():
     Safely reflects the database schema into SQLAlchemy ORM models using a distributed lock.
     Reflects both the public schema and the DLT dataset schema.
     """
-
-    
     try:
         with engine.connect() as conn:
             # 1. Create the lock so multiple workers don't reflect at the same time
@@ -100,6 +130,8 @@ def reflect_db():
                     Base.prepare(autoload_with=engine)
                 except Exception as e:
                     logger.warning(f"Could not reflect DLT schema '{dlt_schema}': {e}")
+
+                _rebuild_class_map()
 
         logger.info(f"Tables reflected successfully: {list(Base.classes.keys())}")
     except Exception as e:

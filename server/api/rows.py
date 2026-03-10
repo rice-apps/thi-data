@@ -3,8 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 from core.deps import get_db, get_model_class, get_internal_model_class, get_repository
-from core.database import Base
-from crud.base import BaseRepository, model_to_dict
+from core.database import get_class_strict, is_dlt_table
+from core.config import settings
+from crud.base import model_to_dict
 from datetime import datetime
 import logging
 
@@ -70,7 +71,7 @@ def get_all_items(
 ) -> Dict[str, Any]:
     logger.info(f"Getting all items from table: {table_name} (skip={skip}, limit={limit})")
     
-    CorruptedRows = Base.classes.get("corrupted_rows")
+    CorruptedRows = get_class_strict("corrupted_rows", schema=settings.DLT_DATASET)
 
     if CorruptedRows and hasattr(model_class, 'original_csv_row_id') and hasattr(CorruptedRows, 'original_csv_row_id'):
         logger.debug(f"Using corrupted rows join for table: {table_name}")
@@ -194,8 +195,8 @@ def match_items(
 
 @router.get("/api/{table_name}/{item_id}")
 def get_one_item(
-    item_id: int, 
-    model_class: Any = Depends(get_model_class), 
+    item_id: str,
+    model_class: Any = Depends(get_model_class),
     db: Session = Depends(get_db)
 ) -> dict:
     logger.info(f"Getting item {item_id} from table")
@@ -210,10 +211,10 @@ def get_one_item(
 @router.put("/api/{table_name}/{item_id}")
 def update_item(
     table_name: str, # Capture table_name from path
-    item_id: int,
-    item_data: dict, 
+    item_id: str,
+    item_data: dict,
     x_user_name: Optional[str] = Header(None, alias="X-User-Name"),
-    model_class: Any = Depends(get_model_class), 
+    model_class: Any = Depends(get_model_class),
     db: Session = Depends(get_db)
 ) -> dict:
     logger.info(f"Updating item {item_id} in table: {table_name}, user: {x_user_name or 'system'}")
@@ -238,6 +239,17 @@ def update_item(
     try:
         new_item = repo.update(db=db, db_obj=item, obj_in=item_data)
         log_metadata_update(db, table_name, user_name=x_user_name or "system")
+        
+        # Cleanup sidecar error record if it exists
+        if is_dlt_table(model_class) and hasattr(new_item, 'original_csv_row_id'):
+            CorruptedRows = get_class_strict("corrupted_rows", schema=settings.DLT_DATASET)
+            if CorruptedRows:
+                try:
+                    db.query(CorruptedRows).filter(CorruptedRows.original_csv_row_id == new_item.original_csv_row_id).delete()
+                    db.commit()
+                except Exception as cleanup_err:
+                    logger.warning(f"Failed to cleanup corrupted_rows for {item_id}: {cleanup_err}")
+                
         logger.info(f"Item {item_id} updated successfully in table {table_name}")
         return model_to_dict(new_item)
     except Exception as e:
@@ -247,18 +259,38 @@ def update_item(
 @router.delete("/api/{table_name}/{item_id}")
 def delete_item(
     table_name: str, # Capture table_name from path
-    item_id: int, 
+    item_id: str,
     x_user_name: Optional[str] = Header(None, alias="X-User-Name"),
-    model_class: Any = Depends(get_model_class), 
+    model_class: Any = Depends(get_model_class),
     db: Session = Depends(get_db)
 ):
     logger.info(f"Deleting item {item_id} from table: {table_name}, user: {x_user_name or 'system'}")
+    
+    # Needs the item's details before deleting it
     repo = get_repository(model_class)
+    item = repo.get_by_id(db, item_id)
+    if not item:
+        logger.warning(f"Item {item_id} not found in table {table_name}")
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    row_id_to_cleanup = getattr(item, 'original_csv_row_id', None)
+    is_dlt = is_dlt_table(model_class)
+    
     success = repo.delete(db, item_id)
     if not success:
         logger.warning(f"Item {item_id} not found in table {table_name}")
         raise HTTPException(status_code=404, detail="Item not found")
     
+    # Cleanup sidecar error record if it exists
+    if is_dlt and row_id_to_cleanup is not None:
+        CorruptedRows = get_class_strict("corrupted_rows", schema=settings.DLT_DATASET)
+        if CorruptedRows:
+            try:
+                db.query(CorruptedRows).filter(CorruptedRows.original_csv_row_id == row_id_to_cleanup).delete()
+                db.commit()
+            except Exception as cleanup_err:
+                logger.warning(f"Failed to cleanup corrupted_rows after delete for {item_id}: {cleanup_err}")
+                
     log_metadata_update(db, table_name, user_name=x_user_name or "system")
     logger.info(f"Item {item_id} deleted successfully from table {table_name}")
     return {"message": "Item deleted successfully"}

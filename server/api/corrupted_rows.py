@@ -91,7 +91,10 @@ def resolve_corrupted_row(
     except Exception:
         raise HTTPException(status_code=404, detail=f"Table '{target_table}' not found")
 
-    record = db.query(TargetModel).filter(TargetModel.id == row_id).first()
+    mapper = sa_inspect(TargetModel)
+    pk_col = mapper.primary_key[0]
+    pk_attr = getattr(TargetModel, pk_col.key)
+    record = db.query(TargetModel).filter(pk_attr == row_id).first()
 
     if not record:
         logger.warning(f"Record not found - table: {target_table}, row_id: {row_id}")

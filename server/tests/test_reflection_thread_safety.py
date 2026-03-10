@@ -108,22 +108,22 @@ class TestModelDiscovery:
     """Test that get_model_class correctly retrieves models and enforces
     access restrictions on hidden tables."""
 
-    @patch("core.deps.Base")
-    def test_returns_model_for_valid_table(self, mock_base):
+    @patch("core.deps.get_class")
+    def test_returns_model_for_valid_table(self, mock_get_class):
         from core.deps import get_model_class
 
         fake_model = type("FakeModel", (), {})
-        mock_base.classes.get.return_value = fake_model
+        mock_get_class.return_value = fake_model
 
         result = get_model_class("patient_data")
         assert result is fake_model
-        mock_base.classes.get.assert_called_once_with("patient_data")
+        mock_get_class.assert_called_once_with("patient_data")
 
-    @patch("core.deps.Base")
-    def test_raises_404_for_unknown_table(self, mock_base):
+    @patch("core.deps.get_class")
+    def test_raises_404_for_unknown_table(self, mock_get_class):
         from core.deps import get_model_class
 
-        mock_base.classes.get.return_value = None
+        mock_get_class.return_value = None
 
         with pytest.raises(HTTPException) as exc_info:
             get_model_class("nonexistent_table")
@@ -142,21 +142,21 @@ class TestModelDiscovery:
             assert exc_info.value.status_code == 403
             assert "restricted" in exc_info.value.detail
 
-    @patch("core.deps.Base")
-    def test_internal_model_class_returns_model(self, mock_base):
+    @patch("core.deps.get_class")
+    def test_internal_model_class_returns_model(self, mock_get_class):
         from core.deps import get_internal_model_class
 
         fake_model = type("FakeInternalModel", (), {})
-        mock_base.classes.get.return_value = fake_model
+        mock_get_class.return_value = fake_model
 
         result = get_internal_model_class("corrupted_rows")
         assert result is fake_model
 
-    @patch("core.deps.Base")
-    def test_internal_model_class_raises_500_if_missing(self, mock_base):
+    @patch("core.deps.get_class")
+    def test_internal_model_class_raises_500_if_missing(self, mock_get_class):
         from core.deps import get_internal_model_class
 
-        mock_base.classes.get.return_value = None
+        mock_get_class.return_value = None
 
         with pytest.raises(HTTPException) as exc_info:
             get_internal_model_class("corrupted_rows")

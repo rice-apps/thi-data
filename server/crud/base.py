@@ -1,6 +1,6 @@
 from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, or_
+from sqlalchemy import inspect as sa_inspect
 from core.database import Base
 
 ModelType = TypeVar("ModelType", bound=Base)
@@ -29,9 +29,13 @@ class BaseRepository(Generic[ModelType]):
         Base class for repositories with default methods to Create, Read, Update, Delete (CRUD).
         """
         self.model = model
+        mapper = sa_inspect(model)
+        pk_cols = mapper.primary_key
+        self._pk_attr = pk_cols[0].key if len(pk_cols) == 1 else None
 
     def get_by_id(self, db: Session, id: Any) -> Optional[ModelType]:
-        return db.query(self.model).filter(self.model.id == id).first()
+        pk_column = getattr(self.model, self._pk_attr)
+        return db.query(self.model).filter(pk_column == id).first()
 
     def get_all(
         self, db: Session, *, skip: int = 0, limit: int = 100
@@ -72,8 +76,8 @@ class BaseRepository(Generic[ModelType]):
         db.refresh(db_obj)
         return db_obj
 
-    def delete(self, db: Session, id: int) -> bool:
-        obj = db.get(self.model, id)
+    def delete(self, db: Session, id: Any) -> bool:
+        obj = self.get_by_id(db, id)
         if obj:
             db.delete(obj)
             db.commit()

@@ -62,9 +62,8 @@ class TestGetAllItems:
 
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.Base") as mock_base, \
+        with patch("api.rows.get_class_strict", return_value=None), \
              patch("api.rows.get_repository") as mock_get_repo:
-            mock_base.classes.get.return_value = None  # No corrupted_rows table
 
             mock_repo = MagicMock()
             mock_item = MagicMock()
@@ -101,12 +100,10 @@ class TestGetAllItems:
         mock_stmt.offset.return_value = mock_stmt
         mock_stmt.limit.return_value = mock_stmt
 
-        with patch("api.rows.Base") as mock_base, \
+        with patch("api.rows.get_class_strict", return_value=mock_corrupted_model), \
              patch("api.rows.inspect", return_value=mapper), \
              patch("api.rows.select", return_value=mock_stmt), \
              patch("api.rows.model_to_dict") as mock_to_dict:
-
-            mock_base.classes.get.return_value = mock_corrupted_model
 
             # Mock the db.execute result
             mock_main_row = MagicMock()
@@ -173,6 +170,7 @@ class TestCreateItem:
     def test_success(self):
         app, mock_db = _make_app()
         mock_model = MagicMock()
+        mock_model.__table__ = MagicMock(schema="public")
         mapper = _mock_mapper(["id", "name", "age"])
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
@@ -195,6 +193,7 @@ class TestCreateItem:
     def test_invalid_field(self):
         app, mock_db = _make_app()
         mock_model = MagicMock()
+        mock_model.__table__ = MagicMock(schema="public")
         mapper = _mock_mapper(["id", "name"])
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
@@ -215,6 +214,7 @@ class TestUpdateItem:
     def test_success(self):
         app, mock_db = _make_app()
         mock_model = MagicMock()
+        mock_model.__table__ = MagicMock(schema="public")
         mapper = _mock_mapper(["id", "name"])
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
@@ -236,6 +236,7 @@ class TestUpdateItem:
     def test_not_found(self):
         app, mock_db = _make_app()
         mock_model = MagicMock()
+        mock_model.__table__ = MagicMock(schema="public")
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
         with patch("api.rows.get_repository") as mock_get_repo:
@@ -251,6 +252,7 @@ class TestUpdateItem:
     def test_invalid_field(self):
         app, mock_db = _make_app()
         mock_model = MagicMock()
+        mock_model.__table__ = MagicMock(schema="public")
         mapper = _mock_mapper(["id", "name"])
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
@@ -269,6 +271,7 @@ class TestUpdateItem:
     def test_pk_update_rejected(self):
         app, mock_db = _make_app()
         mock_model = MagicMock()
+        mock_model.__table__ = MagicMock(schema="public")
         mapper = _mock_mapper(["id", "name"], pk_columns=["id"])
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
@@ -284,6 +287,47 @@ class TestUpdateItem:
         assert resp.status_code == 400
         assert "primary key" in resp.json()["detail"].lower()
 
+    def test_dlt_cleanup_corrupted_rows(self):
+        """Updating a DLT table should clean up any matching corrupted_rows."""
+        app, mock_db = _make_app()
+        mock_model = MagicMock()
+        mock_model.__table__ = MagicMock(schema="dlt_dataset")  # Simulates DLT table
+        mapper = _mock_mapper(["id", "name", "original_csv_row_id"])
+        app.dependency_overrides[get_model_class] = lambda table_name: mock_model
+        
+        mock_corrupted_model = MagicMock()
+        mock_corrupted_model.original_csv_row_id = MagicMock()
+
+        # is_dlt_table will return True because schema is dlt_dataset
+        with patch("api.rows.is_dlt_table", return_value=True), \
+             patch("api.rows.inspect", return_value=mapper), \
+             patch("api.rows.get_repository") as mock_get_repo, \
+             patch("api.rows.model_to_dict") as mock_to_dict, \
+             patch("api.rows.log_metadata_update"), \
+             patch("api.rows.get_class_strict", return_value=mock_corrupted_model):
+             
+            mock_repo = MagicMock()
+            mock_item = MagicMock()
+            mock_repo.get_by_id.return_value = mock_item
+            
+            # The returned item has original_csv_row_id
+            updated_mock_item = MagicMock()
+            updated_mock_item.original_csv_row_id = "row-123"
+            mock_repo.update.return_value = updated_mock_item
+            
+            mock_get_repo.return_value = mock_repo
+            mock_to_dict.return_value = {"id": 1, "name": "Updated", "original_csv_row_id": "row-123"}
+
+            client = TestClient(app)
+            resp = client.put("/api/test_table/1", json={"name": "Updated"})
+
+        assert resp.status_code == 200
+        # Check that the delete query was constructed for corrupted_rows
+        mock_db.query.assert_any_call(mock_corrupted_model)
+        mock_db.query.return_value.filter.assert_called()
+        mock_db.query.return_value.filter.return_value.delete.assert_called_once()
+        mock_db.commit.assert_called()
+
 
 # ---------------------------------------------------------------------------
 # Delete item
@@ -294,6 +338,7 @@ class TestDeleteItem:
     def test_success(self):
         app, mock_db = _make_app()
         mock_model = MagicMock()
+        mock_model.__table__ = MagicMock(schema="public")
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
         with patch("api.rows.get_repository") as mock_get_repo, \
@@ -311,6 +356,7 @@ class TestDeleteItem:
     def test_not_found(self):
         app, mock_db = _make_app()
         mock_model = MagicMock()
+        mock_model.__table__ = MagicMock(schema="public")
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
         with patch("api.rows.get_repository") as mock_get_repo:
@@ -322,6 +368,38 @@ class TestDeleteItem:
             resp = client.delete("/api/test_table/999")
 
         assert resp.status_code == 404
+
+    def test_dlt_cleanup_corrupted_rows_on_delete(self):
+        """Deleting from a DLT table should clean up any matching corrupted_rows."""
+        app, mock_db = _make_app()
+        mock_model = MagicMock()
+        mock_model.__table__ = MagicMock(schema="dlt_dataset")  # Simulates DLT table
+        app.dependency_overrides[get_model_class] = lambda table_name: mock_model
+
+        mock_corrupted_model = MagicMock()
+        mock_corrupted_model.original_csv_row_id = MagicMock()
+
+        with patch("api.rows.is_dlt_table", return_value=True), \
+             patch("api.rows.get_repository") as mock_get_repo, \
+             patch("api.rows.log_metadata_update"), \
+             patch("api.rows.get_class_strict", return_value=mock_corrupted_model):
+             
+            mock_repo = MagicMock()
+            mock_item = MagicMock()
+            mock_item.original_csv_row_id = "row-999"
+            mock_repo.get_by_id.return_value = mock_item
+            mock_repo.delete.return_value = True
+            mock_get_repo.return_value = mock_repo
+
+            client = TestClient(app)
+            resp = client.delete("/api/test_table/1")
+
+        assert resp.status_code == 200
+        # Check that the delete query was constructed for corrupted_rows
+        mock_db.query.assert_any_call(mock_corrupted_model)
+        mock_db.query.return_value.filter.assert_called()
+        mock_db.query.return_value.filter.return_value.delete.assert_called_once()
+        mock_db.commit.assert_called()
 
 
 # ---------------------------------------------------------------------------

@@ -362,6 +362,10 @@ class TestResolveRequestBody:
             mock_col_inner.type = String()
             mock_col_attr.columns = [mock_col_inner]
             mock_mapper.column_attrs = [mock_col_attr]
+            # PK introspection: resolve endpoint uses mapper.primary_key[0].key
+            mock_pk_col = MagicMock()
+            mock_pk_col.key = "id"
+            mock_mapper.primary_key = [mock_pk_col]
 
             with patch("api.corrupted_rows.sa_inspect", return_value=mock_mapper):
                 mock_record.name = "old_value"

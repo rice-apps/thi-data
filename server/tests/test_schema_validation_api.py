@@ -570,6 +570,7 @@ class TestErrorSanitization:
         app.dependency_overrides[get_db] = override_get_db
 
         mock_model = MagicMock()
+        mock_model.__table__ = MagicMock(schema="public")
         mock_mapper = MagicMock()
         mock_col = MagicMock()
         mock_col.key = "name"
@@ -637,6 +638,7 @@ class TestErrorSanitization:
         app.dependency_overrides[get_db] = override_get_db
 
         mock_model = MagicMock()
+        mock_model.__table__ = MagicMock(schema="public")
         mock_mapper = MagicMock()
         mock_col = MagicMock()
         mock_col.key = "name"
