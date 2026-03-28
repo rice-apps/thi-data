@@ -129,7 +129,7 @@ export default function DataUploadPage() {
         }
       );
 
-      xhr.open('POST', `${baseUrl}/files/upload`);
+      xhr.open('POST', `${baseUrl}/api/files/upload`);
       if (userName) {
         xhr.setRequestHeader('X-User-Name', userName);
       }
