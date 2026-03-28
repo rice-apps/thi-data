@@ -28,7 +28,7 @@ _fake_dlt_pipeline.CORRUPTED_ROWS_NAME = CORRUPTED_ROWS_NAME  # type: ignore[att
 _fake_dlt_pipeline.RAW_DATA_NAME = RAW_DATA_NAME  # type: ignore[attr-defined]
 _fake_dlt_pipeline.CLEAN_DATA_NAME = CLEAN_DATA_NAME  # type: ignore[attr-defined]
 class MockDLTPipeline:
-    def load_to_postgres(self, con): pass
+    def load_to_postgres(self, con, **kwargs): pass
 _fake_dlt_pipeline.DLTPipeline = MockDLTPipeline
 sys.modules["services.dlt_pipeline"] = _fake_dlt_pipeline
 

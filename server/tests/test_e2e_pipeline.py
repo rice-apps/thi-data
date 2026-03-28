@@ -163,10 +163,10 @@ class TestFullPipelineE2E:
         if status != "celery_success":
             pytest.skip("Processing did not succeed")
 
-        r = requests.get(f"{API_URL}/api/final_patient_records")
+        r = requests.get(f"{API_URL}/api/test_data")
         assert r.status_code == 200
         data = r.json()
-        assert data["total"] > 0, "No rows found in final_patient_records"
+        assert data["total"] > 0, "No rows found in test_data table"
 
     def test_new_table_appears_in_tables_list(self, processed_file):
         file_id, status = processed_file
@@ -176,7 +176,7 @@ class TestFullPipelineE2E:
         r = requests.get(f"{API_URL}/api/tables")
         assert r.status_code == 200
         tables = r.json()["tables"]
-        assert "final_patient_records" in tables
+        assert "test_data" in tables
 
     def test_sse_returns_terminal_event(self, processed_file):
         file_id, status = processed_file
@@ -237,9 +237,9 @@ class TestCorruptedDataE2E:
             pytest.skip("Processing did not succeed")
 
         # Access corrupted rows via the CRUD endpoint on the data table
-        r = requests.get(f"{API_URL}/api/final_patient_records")
+        r = requests.get(f"{API_URL}/api/test_data_corrupted")
         if r.status_code != 200:
-            pytest.skip("final_patient_records table not available")
+            pytest.skip("test_data_corrupted table not available")
 
         data = r.json()
         # Check if any rows have corruption markers
@@ -294,9 +294,9 @@ class TestXLSXCorruptedDataE2E:
         if status != "celery_success":
             pytest.skip("Processing did not succeed")
 
-        r = requests.get(f"{API_URL}/api/final_patient_records")
+        r = requests.get(f"{API_URL}/api/test_data_corrupted")
         if r.status_code != 200:
-            pytest.skip("final_patient_records table not available")
+            pytest.skip("test_data_corrupted table not available")
 
         data = r.json()
         corrupted = [row for row in data.get("data", []) if row.get("_is_corrupted")]

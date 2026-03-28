@@ -62,6 +62,51 @@ class TestUploadFile:
         mock_storage.upload_file.assert_called_once()
         mock_repo.create.assert_called_once()
 
+        # Verify target_table_name is derived from filename
+        create_kwargs = mock_repo.create.call_args
+        obj_in = create_kwargs[1]["obj_in"] if "obj_in" in create_kwargs[1] else create_kwargs[0][1]
+        assert obj_in["target_table_name"] == "test"
+
+    def test_upload_derives_table_name_from_xlsx(self):
+        app, mock_db = _make_app()
+        mock_storage = MagicMock()
+        mock_storage.upload_file.return_value = True
+        mock_repo = MagicMock()
+        mock_repo.create.return_value = MagicMock()
+
+        app.dependency_overrides[get_storage_provider] = lambda: mock_storage
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        client = TestClient(app)
+        resp = client.post(
+            "/api/files/upload",
+            files={"file": ("OWLS Data (2025).xlsx", b"fake", "application/octet-stream")},
+        )
+        assert resp.status_code == 200
+        create_kwargs = mock_repo.create.call_args
+        obj_in = create_kwargs[1]["obj_in"] if "obj_in" in create_kwargs[1] else create_kwargs[0][1]
+        assert obj_in["target_table_name"] == "owls_data__2025"
+
+    def test_upload_derives_table_name_numeric_prefix(self):
+        app, mock_db = _make_app()
+        mock_storage = MagicMock()
+        mock_storage.upload_file.return_value = True
+        mock_repo = MagicMock()
+        mock_repo.create.return_value = MagicMock()
+
+        app.dependency_overrides[get_storage_provider] = lambda: mock_storage
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        client = TestClient(app)
+        resp = client.post(
+            "/api/files/upload",
+            files={"file": ("123data.csv", b"a,b\n1,2", "text/csv")},
+        )
+        assert resp.status_code == 200
+        create_kwargs = mock_repo.create.call_args
+        obj_in = create_kwargs[1]["obj_in"] if "obj_in" in create_kwargs[1] else create_kwargs[0][1]
+        assert obj_in["target_table_name"] == "t_123data"
+
     def test_upload_storage_returns_false(self):
         app, mock_db = _make_app()
         mock_storage = MagicMock()

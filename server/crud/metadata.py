@@ -3,24 +3,28 @@ from sqlalchemy import select, func, desc, text
 from typing import Any, List, Dict, Optional
 import logging
 
-def get_database_size(name: str, db: Session) -> Optional[Dict[str, str]]:
+def get_database_size(name: str, db: Session, dlt_schema: str = "clinical_data") -> Optional[Dict[str, str]]:
     """
     Get the total size of a table including indexes.
     Returns None if the table doesn't exist or sizing is unsupported.
     """
     try:
-        # Use quote_ident to prevent SQL injection and handle reserved words/spaces
-        stmt = text("SELECT pg_size_pretty(pg_total_relation_size(quote_ident(:name)))")
-        size = db.execute(stmt, {"name": name}).scalar()
+        stmt = text("""
+            SELECT pg_size_pretty(pg_total_relation_size(
+                COALESCE(to_regclass(quote_ident(:name)), to_regclass(:dlt_schema || '.' || quote_ident(:name)))
+            ))
+        """)
+        size = db.execute(stmt, {"name": name, "dlt_schema": dlt_schema}).scalar()
         return {"table": name, "size": size} if size else None
     except Exception:
         return None
 
 def get_tables_metadata(
-    db: Session, 
-    table_names: List[str], 
-    creation_model: Any, 
-    updates_model: Any
+    db: Session,
+    table_names: List[str],
+    creation_model: Any,
+    updates_model: Any,
+    dlt_schema: str = "clinical_data",
 ) -> List[Dict[str, Any]]:
     """
     Fetch comprehensive metadata for a list of tables in a single operation.
@@ -56,14 +60,17 @@ def get_tables_metadata(
             logging.error(f"Metadata updates fetch failed: {e}")
 
     # 3. Bulk fetch all table sizes in a single query to eliminate N+1 roundtrips.
-    # Use CAST() instead of :: to avoid collision with SQLAlchemy parameter placeholders (:names).
+    # Use to_regclass() which returns NULL for non-existent tables instead of throwing.
+    # Try public schema first, then fall back to DLT schema for cross-schema tables.
     size_map = {}
     try:
         size_query = text("""
-            SELECT name, pg_size_pretty(pg_total_relation_size(name))
+            SELECT name, pg_size_pretty(pg_total_relation_size(
+                COALESCE(to_regclass(name), to_regclass(:dlt_schema || '.' || name))
+            ))
             FROM unnest(CAST(:names AS text[])) AS name
         """)
-        size_results = db.execute(size_query, {"names": table_names}).all()
+        size_results = db.execute(size_query, {"names": table_names, "dlt_schema": dlt_schema}).all()
         size_map = {row[0]: row[1] for row in size_results if row[1]}
     except Exception as e:
         logging.warning(f"Bulk size fetch failed: {e}")

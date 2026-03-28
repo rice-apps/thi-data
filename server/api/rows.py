@@ -70,8 +70,12 @@ def get_all_items(
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     logger.info(f"Getting all items from table: {table_name} (skip={skip}, limit={limit})")
-    
-    CorruptedRows = get_class_strict("corrupted_rows", schema=settings.DLT_DATASET)
+
+    # Try per-table corrupted sidecar first, fall back to legacy name
+    CorruptedRows = (
+        get_class_strict(f"{table_name}__corrupted", schema=settings.DLT_DATASET)
+        or get_class_strict("corrupted_rows", schema=settings.DLT_DATASET)
+    )
 
     if CorruptedRows and hasattr(model_class, 'original_csv_row_id') and hasattr(CorruptedRows, 'original_csv_row_id'):
         logger.debug(f"Using corrupted rows join for table: {table_name}")
@@ -95,6 +99,7 @@ def get_all_items(
         data = []
         for main_row, corrupted_row in results:
             item_dict = model_to_dict(main_row)
+            item_dict.pop("original_csv_row_id", None)
 
             if corrupted_row:
                 corrupted_dict = model_to_dict(corrupted_row)
@@ -130,8 +135,11 @@ def get_all_items(
         repo = get_repository(model_class)
         items, total = repo.get_all(db, skip=skip, limit=limit)
         logger.info(f"Retrieved {len(items)} items from {table_name}, total: {total}")
+        data = [model_to_dict(item) for item in items]
+        for d in data:
+            d.pop("original_csv_row_id", None)
         return {
-            "data": [model_to_dict(item) for item in items],
+            "data": data,
             "total": total,
             "page": (skip // limit) + 1,
             "limit": limit
@@ -242,7 +250,10 @@ def update_item(
         
         # Cleanup sidecar error record if it exists
         if is_dlt_table(model_class) and hasattr(new_item, 'original_csv_row_id'):
-            CorruptedRows = get_class_strict("corrupted_rows", schema=settings.DLT_DATASET)
+            CorruptedRows = (
+                get_class_strict(f"{table_name}__corrupted", schema=settings.DLT_DATASET)
+                or get_class_strict("corrupted_rows", schema=settings.DLT_DATASET)
+            )
             if CorruptedRows:
                 try:
                     db.query(CorruptedRows).filter(CorruptedRows.original_csv_row_id == new_item.original_csv_row_id).delete()
@@ -283,7 +294,10 @@ def delete_item(
     
     # Cleanup sidecar error record if it exists
     if is_dlt and row_id_to_cleanup is not None:
-        CorruptedRows = get_class_strict("corrupted_rows", schema=settings.DLT_DATASET)
+        CorruptedRows = (
+            get_class_strict(f"{table_name}__corrupted", schema=settings.DLT_DATASET)
+            or get_class_strict("corrupted_rows", schema=settings.DLT_DATASET)
+        )
         if CorruptedRows:
             try:
                 db.query(CorruptedRows).filter(CorruptedRows.original_csv_row_id == row_id_to_cleanup).delete()

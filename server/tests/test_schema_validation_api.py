@@ -52,7 +52,7 @@ class TestValidateAndSplitEdgeCases:
         _fake_dlt.RAW_DATA_NAME = "raw_staging"
         _fake_dlt.CLEAN_DATA_NAME = "clean_data"
         class MockDLTPipeline:
-            def load_to_postgres(self, con): pass
+            def load_to_postgres(self, con, **kwargs): pass
         _fake_dlt.DLTPipeline = MockDLTPipeline
         sys.modules["services.dlt_pipeline"] = _fake_dlt
 

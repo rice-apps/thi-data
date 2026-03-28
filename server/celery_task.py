@@ -80,7 +80,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
     update_file_status(file_id, FileStatus.PROCESSING)
 
     try:
-        # Get object key from registry
+        # Get object key and target table name from registry
         with get_db_context() as db:
             records = get_file_registry_repo().get_by_field(
                 db=db,
@@ -90,16 +90,17 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
             if not records:
                 raise ValueError(f"File ID {file_id} not found in registry")
             object_key = records[0].object_key
+            target_table_name = records[0].target_table_name
 
         # Get local file path via StorageProvider
         storage_provider = get_storage_provider()
         file_path = storage_provider.get_file_path(object_key)
-        
+
         if not file_path:
              raise FileNotFoundError(f"Could not resolve path for {object_key}")
 
         # Run ETL logic
-        error_count = run_etl(str(file_path), proposed_schema)
+        error_count = run_etl(str(file_path), proposed_schema, target_table_name=target_table_name)
         
         update_file_status(file_id, FileStatus.SUCCESS)
 

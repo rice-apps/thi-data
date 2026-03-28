@@ -7,7 +7,7 @@ from core.deps import get_db, get_model_class, get_internal_model_class
 from sqlalchemy import inspect
 import logging
 
-from core.constants import HIDDEN_TABLES
+from core.constants import UNLISTED_TABLES, HIDDEN_TABLE_SUFFIXES
 
 router = APIRouter()
 
@@ -21,9 +21,15 @@ def get_all_tables():
     """
     logger.info("Getting all tables from database")
     all_tables = list(Base.classes.keys())
-    visible_tables = [t for t in all_tables if t not in HIDDEN_TABLES]
+    visible_tables = [t for t in all_tables if _is_visible(t)]
     logger.info(f"Retrieved {len(visible_tables)} visible tables out of {len(all_tables)} total tables")
     return {"tables": visible_tables}
+
+
+def _is_visible(table_name: str) -> bool:
+    if table_name in UNLISTED_TABLES:
+        return False
+    return not any(table_name.endswith(s) for s in HIDDEN_TABLE_SUFFIXES)
 
 
 @router.get("/api/tables_with_metadata")
@@ -35,7 +41,7 @@ def get_tables_with_metadata(db: Session = Depends(get_db)):
     """
     logger.info("Getting all tables with metadata")
     all_tables = list(Base.classes.keys())
-    visible_tables = [t for t in all_tables if t not in HIDDEN_TABLES]
+    visible_tables = [t for t in all_tables if _is_visible(t)]
     logger.debug(f"Found {len(visible_tables)} visible tables")
     
     creation_model = get_internal_model_class("metadata_creation")
@@ -59,7 +65,7 @@ def get_table_schema(
     """
     logger.info(f"Getting schema for table: {table_name}")
     mapper = inspect(model_class)
-    columns = [c.key for c in mapper.column_attrs if c.key != "id"]
+    columns = [c.key for c in mapper.column_attrs if c.key not in ("id", "original_csv_row_id")]
     logger.info(f"Retrieved {len(columns)} columns for table {table_name}")
     return {"columns": columns}
 

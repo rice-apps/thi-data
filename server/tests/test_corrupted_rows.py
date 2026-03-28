@@ -226,7 +226,7 @@ class TestETLSidecarBehavior:
         fake.RAW_DATA_NAME = "raw_staging"
         fake.CLEAN_DATA_NAME = "clean_data"
         class MockDLTPipeline:
-            def load_to_postgres(self, con): pass
+            def load_to_postgres(self, con, **kwargs): pass
         fake.DLTPipeline = MockDLTPipeline
         sys.modules["services.dlt_pipeline"] = fake
 

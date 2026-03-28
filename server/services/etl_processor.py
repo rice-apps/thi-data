@@ -9,13 +9,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def process_file(file_path: str, proposed_schema: dict):
+def process_file(file_path: str, proposed_schema: dict, target_table_name: str = None):
     """
     Core ETL function: read file → validate with DuckDB TRY_CAST → split clean/corrupted → load to Postgres.
 
     Args:
         file_path: Absolute path to the data file on disk (.csv, .xlsx, etc.).
         proposed_schema: Dict mapping column names to DuckDB types, e.g. {"age": "INTEGER"}.
+        target_table_name: Name of the Postgres table to create (derived from filename).
     """
     logger.info(f"Starting file processing task for: {file_path}")
     logger.debug(f"Proposed schema: {proposed_schema}")
@@ -32,7 +33,7 @@ def process_file(file_path: str, proposed_schema: dict):
         logger.info("Raw staging table created successfully")
         error_count = _validate_and_split_data(con, proposed_schema)
         dlt_pipeline = DLTPipeline()
-        dlt_pipeline.load_to_postgres(con)
+        dlt_pipeline.load_to_postgres(con, target_table_name=target_table_name)
         logger.info("File processing task completed successfully")
         return error_count
     finally:

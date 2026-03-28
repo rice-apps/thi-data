@@ -58,6 +58,47 @@ class TestGetAllTables:
         assert "file_registry" not in tables
         assert "metadata_creation" not in tables
 
+    def test_hides_test_databases(self):
+        app, _ = _make_app()
+
+        with patch("api.tables.Base") as mock_base:
+            mock_base.classes.keys.return_value = [
+                "owls",
+                "test_database",
+                "thi_database",
+            ]
+
+            client = TestClient(app)
+            resp = client.get("/api/tables")
+
+        assert resp.status_code == 200
+        tables = resp.json()["tables"]
+        assert "owls" in tables
+        assert "test_database" not in tables
+        assert "thi_database" not in tables
+
+    def test_hides_corrupted_suffix_tables(self):
+        app, _ = _make_app()
+
+        with patch("api.tables.Base") as mock_base:
+            mock_base.classes.keys.return_value = [
+                "owls",
+                "owls__corrupted",
+                "corrupted_rows",
+                "lab_results",
+            ]
+
+            client = TestClient(app)
+            resp = client.get("/api/tables")
+
+        assert resp.status_code == 200
+        tables = resp.json()["tables"]
+        assert "owls" in tables
+        assert "lab_results" in tables
+        # Internal tables hidden
+        assert "owls__corrupted" not in tables
+        assert "corrupted_rows" not in tables
+
 
 # ---------------------------------------------------------------------------
 # GET /api/tables_with_metadata
@@ -99,18 +140,20 @@ class TestTablesWithMetadata:
 
 class TestGetTableSchema:
 
-    def test_schema_excludes_id(self):
+    def test_schema_excludes_internal_columns(self):
         app, _ = _make_app()
 
         mock_model = MagicMock()
         mapper = MagicMock()
         col_id = MagicMock()
         col_id.key = "id"
+        col_rowid = MagicMock()
+        col_rowid.key = "original_csv_row_id"
         col_name = MagicMock()
         col_name.key = "name"
         col_age = MagicMock()
         col_age.key = "age"
-        mapper.column_attrs = [col_id, col_name, col_age]
+        mapper.column_attrs = [col_id, col_rowid, col_name, col_age]
 
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
@@ -121,6 +164,7 @@ class TestGetTableSchema:
         assert resp.status_code == 200
         columns = resp.json()["columns"]
         assert "id" not in columns
+        assert "original_csv_row_id" not in columns
         assert "name" in columns
         assert "age" in columns
 

@@ -113,17 +113,17 @@ class TestArrowTableExtraction:
 
         assert mock_pipeline_instance.run.call_count == 2
 
-        # First call: clean data -> final_patient_records
+        # First call: clean data -> final_patient_records (default name)
         first_call = mock_pipeline_instance.run.call_args_list[0]
         assert first_call[1]["table_name"] == "final_patient_records"
-        assert first_call[1]["write_disposition"] == "merge"
+        assert first_call[1]["write_disposition"] == "replace"
         # Arrow-compatible type (RecordBatchReader or Table)
         assert hasattr(first_call[0][0], "schema")
 
-        # Second call: corrupted rows
+        # Second call: corrupted rows sidecar
         second_call = mock_pipeline_instance.run.call_args_list[1]
-        assert second_call[1]["table_name"] == "corrupted_rows"
-        assert second_call[1]["write_disposition"] == "merge"
+        assert second_call[1]["table_name"] == "final_patient_records__corrupted"
+        assert second_call[1]["write_disposition"] == "replace"
         assert hasattr(second_call[0][0], "schema")
 
     @patch("services.dlt_pipeline.dlt")
@@ -188,10 +188,10 @@ class TestPipelineInvocation:
         )
 
     @patch("services.dlt_pipeline.dlt")
-    def test_write_disposition_is_append(
+    def test_write_disposition_is_replace(
         self, mock_dlt, real_dlt_pipeline, duckdb_con
     ):
-        """Both runs must use append disposition for incremental loads."""
+        """Both runs must use replace disposition for clean loads."""
         seed_clean_and_corrupted(duckdb_con, [("A", "1")], [])
 
         mock_pipeline_instance = MagicMock()
@@ -201,7 +201,28 @@ class TestPipelineInvocation:
         real_dlt_pipeline.DLTPipeline().load_to_postgres(duckdb_con)
 
         for c in mock_pipeline_instance.run.call_args_list:
-            assert c[1]["write_disposition"] == "merge"
+            assert c[1]["write_disposition"] == "replace"
+
+    @patch("services.dlt_pipeline.dlt")
+    def test_custom_target_table_name(
+        self, mock_dlt, real_dlt_pipeline, duckdb_con
+    ):
+        """When target_table_name is provided, pipeline.run uses it
+        instead of the default 'final_patient_records'."""
+        seed_clean_and_corrupted(duckdb_con, [("A", "1")], [])
+
+        mock_pipeline_instance = MagicMock()
+        mock_dlt.pipeline.return_value = mock_pipeline_instance
+        mock_pipeline_instance.run.return_value = MagicMock()
+
+        real_dlt_pipeline.DLTPipeline().load_to_postgres(
+            duckdb_con, target_table_name="owls"
+        )
+
+        first_call = mock_pipeline_instance.run.call_args_list[0]
+        assert first_call[1]["table_name"] == "owls"
+        second_call = mock_pipeline_instance.run.call_args_list[1]
+        assert second_call[1]["table_name"] == "owls__corrupted"
 
 
 # ===========================================================================

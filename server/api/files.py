@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, Dict
+import re
 import uuid
 
 from sqlalchemy.orm import Session
@@ -34,6 +35,12 @@ async def upload_file(
     content = await file.read()
     logger.info("Starting upload: %s  file_id=%s", file.filename, file_id)
 
+    # Derive a SQL-safe table name from the filename (without extension)
+    stem = file.filename.rsplit(".", 1)[0] if "." in file.filename else file.filename
+    table_name = re.sub(r"[^a-zA-Z0-9_]", "_", stem).strip("_").lower()
+    if not table_name or table_name[0].isdigit():
+        table_name = f"t_{table_name}"
+
     try:
         # Upload via the configured StorageProvider (S3/SeaweedFS or FakeS3)
         uploaded = storage_provider.upload_file(object_key, content)
@@ -44,6 +51,7 @@ async def upload_file(
                 "file_id": file_id,
                 "object_key": object_key,
                 "status": FileStatus.UPLOADED,
+                "target_table_name": table_name,
             },
         )
 
