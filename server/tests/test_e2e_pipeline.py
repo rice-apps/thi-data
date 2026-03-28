@@ -24,6 +24,7 @@ from core.enums import FileStatus
 API_URL = "http://localhost:8000"
 TEST_CSV_PATH = os.path.join(current_dir, "test_data.csv")
 CORRUPTED_CSV_PATH = os.path.join(current_dir, "test_data_corrupted.csv")
+CORRUPTED_XLSX_PATH = os.path.join(current_dir, "test_data_corrupted.xlsx")
 
 FRICTIONLESS_TO_DUCKDB = {
     "string": "VARCHAR",
@@ -46,16 +47,24 @@ def _api_available():
         return False
 
 
-def _upload_and_process(csv_path, schema_overrides=None):
-    """Upload CSV, infer schema, confirm, process. Returns file_id.
+_MIME_TYPES = {
+    ".csv": "text/csv",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+
+def _upload_and_process(file_path, schema_overrides=None):
+    """Upload file, infer schema, confirm, process. Returns file_id.
 
     Args:
-        csv_path: Path to the CSV file.
+        file_path: Path to the data file (.csv or .xlsx).
         schema_overrides: Optional dict mapping column names to DuckDB types,
             applied after frictionless inference to force strict types.
     """
-    with open(csv_path, "rb") as f:
-        files = {"file": (os.path.basename(csv_path), f, "text/csv")}
+    ext = os.path.splitext(file_path)[1].lower()
+    mime = _MIME_TYPES.get(ext, "application/octet-stream")
+    with open(file_path, "rb") as f:
+        files = {"file": (os.path.basename(file_path), f, mime)}
         r = requests.post(f"{API_URL}/api/files/upload", files=files)
     assert r.status_code == 200, f"Upload failed: {r.text}"
     file_id = r.json()["file_id"]
@@ -239,6 +248,58 @@ class TestCorruptedDataE2E:
         #   P002: age="abc" (not INTEGER)
         #   P003: blood_pressure="HIGH" (not INTEGER)
         #   P004: admission_date="not-a-date" (not DATE)
+        assert len(corrupted) == 3, f"Expected 3 corrupted rows but found {len(corrupted)}"
+
+        corrupted_ids = {row["patient_id"] for row in corrupted}
+        assert corrupted_ids == {"P002", "P003", "P004"}, (
+            f"Expected corrupted patient_ids {{P002, P003, P004}}, got {corrupted_ids}"
+        )
+
+
+# ===========================================================================
+# XLSX Corrupted Data E2E
+# ===========================================================================
+
+class TestXLSXCorruptedDataE2E:
+
+    @pytest.fixture(scope="class")
+    def processed_xlsx_file(self):
+        """Upload test_data_corrupted.xlsx and process it."""
+        if not os.path.exists(CORRUPTED_XLSX_PATH):
+            pytest.skip("test_data_corrupted.xlsx not found")
+
+        file_id = _upload_and_process(
+            CORRUPTED_XLSX_PATH,
+            schema_overrides={
+                "age": "INTEGER",
+                "blood_pressure": "INTEGER",
+                "admission_date": "DATE",
+            },
+        )
+        status = _poll_until_terminal(file_id)
+
+        yield file_id, status
+
+        try:
+            requests.delete(f"{API_URL}/api/files", params={"file_id": file_id})
+        except Exception:
+            pass
+
+    def test_processing_completes(self, processed_xlsx_file):
+        file_id, status = processed_xlsx_file
+        assert status == "celery_success", f"Expected success but got {status}"
+
+    def test_corrupted_rows_detected(self, processed_xlsx_file):
+        file_id, status = processed_xlsx_file
+        if status != "celery_success":
+            pytest.skip("Processing did not succeed")
+
+        r = requests.get(f"{API_URL}/api/final_patient_records")
+        if r.status_code != 200:
+            pytest.skip("final_patient_records table not available")
+
+        data = r.json()
+        corrupted = [row for row in data.get("data", []) if row.get("_is_corrupted")]
         assert len(corrupted) == 3, f"Expected 3 corrupted rows but found {len(corrupted)}"
 
         corrupted_ids = {row["patient_id"] for row in corrupted}

@@ -2,6 +2,7 @@ import duckdb
 import os
 from services.dlt_pipeline import DLTPipeline
 from services.dlt_pipeline import CORRUPTED_ROWS_NAME, RAW_DATA_NAME, CLEAN_DATA_NAME
+from services.file_loaders import create_raw_table
 from core.config import settings
 import logging
 
@@ -10,10 +11,10 @@ logger = logging.getLogger(__name__)
 
 def process_file(file_path: str, proposed_schema: dict):
     """
-    Core ETL function: read CSV → validate with DuckDB TRY_CAST → split clean/corrupted → load to Postgres.
+    Core ETL function: read file → validate with DuckDB TRY_CAST → split clean/corrupted → load to Postgres.
 
     Args:
-        file_path: Absolute path to the CSV file on disk.
+        file_path: Absolute path to the data file on disk (.csv, .xlsx, etc.).
         proposed_schema: Dict mapping column names to DuckDB types, e.g. {"age": "INTEGER"}.
     """
     logger.info(f"Starting file processing task for: {file_path}")
@@ -26,11 +27,8 @@ def process_file(file_path: str, proposed_schema: dict):
     logger.debug(f"DuckDB temp directory set to: {settings.DUCKDB_TEMP_DIR}")
 
     try:
-        logger.info(f"Creating raw staging table from CSV: {file_path}")
-        con.execute(f"""
-            CREATE TABLE {RAW_DATA_NAME} AS
-            SELECT * FROM read_csv('{file_path}', all_varchar=True, auto_detect=True)
-        """)
+        logger.info(f"Creating raw staging table from file: {file_path}")
+        create_raw_table(con, file_path, RAW_DATA_NAME)
         logger.info("Raw staging table created successfully")
         error_count = _validate_and_split_data(con, proposed_schema)
         dlt_pipeline = DLTPipeline()
