@@ -1,11 +1,11 @@
 """
-Unit tests for server/api/tables.py — table listing, metadata, schema, size.
+Unit tests for server/api/tables.py — table listing, metadata, schema, size, delete.
 
 All tests use mocked dependencies (no live services).
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -39,8 +39,8 @@ class TestGetAllTables:
     def test_returns_visible_tables_only(self):
         app, _ = _make_app()
 
-        with patch("api.tables.Base") as mock_base:
-            mock_base.classes.keys.return_value = [
+        with patch("api.tables.db_module") as mock_db_mod:
+            mock_db_mod.Base.classes.keys.return_value = [
                 "patients",
                 "file_registry",
                 "metadata_creation",
@@ -61,8 +61,8 @@ class TestGetAllTables:
     def test_hides_test_databases(self):
         app, _ = _make_app()
 
-        with patch("api.tables.Base") as mock_base:
-            mock_base.classes.keys.return_value = [
+        with patch("api.tables.db_module") as mock_db_mod:
+            mock_db_mod.Base.classes.keys.return_value = [
                 "owls",
                 "test_database",
                 "thi_database",
@@ -80,8 +80,8 @@ class TestGetAllTables:
     def test_hides_corrupted_suffix_tables(self):
         app, _ = _make_app()
 
-        with patch("api.tables.Base") as mock_base:
-            mock_base.classes.keys.return_value = [
+        with patch("api.tables.db_module") as mock_db_mod:
+            mock_db_mod.Base.classes.keys.return_value = [
                 "owls",
                 "owls__corrupted",
                 "corrupted_rows",
@@ -116,10 +116,10 @@ class TestTablesWithMetadata:
             lambda table_name: mock_creation if "creation" in table_name else mock_updates
         )
 
-        with patch("api.tables.Base") as mock_base, \
+        with patch("api.tables.db_module") as mock_db_mod, \
              patch("api.tables.get_tables_metadata") as mock_get_meta, \
              patch("api.tables.get_internal_model_class") as mock_get_internal:
-            mock_base.classes.keys.return_value = ["patients", "file_registry"]
+            mock_db_mod.Base.classes.keys.return_value = ["patients", "file_registry"]
             mock_get_internal.side_effect = [mock_creation, mock_updates]
             mock_get_meta.return_value = [
                 {"name": "patients", "uploadedBy": "admin", "size": "1 MB"}
@@ -197,3 +197,159 @@ class TestGetSize:
             resp = client.get("/api/get_size/nonexistent")
 
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/tables/{table_name}
+# ---------------------------------------------------------------------------
+
+class TestDeleteTable:
+
+    def _make_meta_mocks(self, db):
+        """Return (MetadataCreation mock, MetadataUpdates mock, FileRegistry mock)
+        wired so db.query(...).filter(...).all() and .delete() behave correctly."""
+        creation_record = MagicMock()
+        creation_record.id = "uuid-1"
+
+        mock_creation_cls = MagicMock()
+        mock_updates_cls = MagicMock()
+        mock_registry_cls = MagicMock()
+
+        creation_query = MagicMock()
+        creation_query.filter.return_value.all.return_value = [creation_record]
+        updates_query = MagicMock()
+        updates_query.filter.return_value.delete.return_value = 1
+        registry_query = MagicMock()
+        registry_query.filter.return_value.delete.return_value = 1
+
+        def db_query_side_effect(cls):
+            if cls is mock_creation_cls:
+                return creation_query
+            if cls is mock_updates_cls:
+                return updates_query
+            return registry_query
+
+        db.query.side_effect = db_query_side_effect
+        return mock_creation_cls, mock_updates_cls, mock_registry_cls, creation_record
+
+    def test_deletes_table_and_metadata(self):
+        app, mock_db = _make_app()
+        mock_creation, mock_updates, mock_registry, creation_record = (
+            self._make_meta_mocks(mock_db)
+        )
+
+        with patch("api.tables.get_class", return_value=MagicMock()) as mock_get_class, \
+             patch("api.tables.get_internal_model_class") as mock_get_internal, \
+             patch("api.tables.get_file_registry_model", return_value=mock_registry), \
+             patch("api.tables.reflect_db") as mock_reflect, \
+             patch("api.tables.settings") as mock_settings:
+
+            mock_settings.DLT_DATASET = "clinical_data"
+            mock_get_internal.side_effect = lambda name: (
+                mock_creation if "creation" in name else mock_updates
+            )
+
+            client = TestClient(app)
+            resp = client.delete("/api/tables/patients")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"deleted": "patients"}
+        mock_db.delete.assert_called_once_with(creation_record)
+        mock_db.commit.assert_called_once()
+        mock_reflect.assert_called_once()
+
+        executed_sqls = [str(call_args[0][0]) for call_args in mock_db.execute.call_args_list]
+        assert any("patients" in s for s in executed_sqls)
+        assert any("patients__corrupted" in s for s in executed_sqls)
+
+    def test_rejects_hidden_table(self):
+        app, mock_db = _make_app()
+
+        client = TestClient(app)
+        resp = client.delete("/api/tables/metadata_creation")
+
+        assert resp.status_code == 403
+
+    def test_rejects_corrupted_suffix_table(self):
+        app, mock_db = _make_app()
+
+        client = TestClient(app)
+        resp = client.delete("/api/tables/patients__corrupted")
+
+        assert resp.status_code == 403
+
+    def test_404_when_table_not_in_orm(self):
+        app, mock_db = _make_app()
+
+        with patch("api.tables.get_class", return_value=None):
+            client = TestClient(app)
+            resp = client.delete("/api/tables/nonexistent")
+
+        assert resp.status_code == 404
+
+    def test_delete_clears_repo_cache(self):
+        """After deletion, _repo_cache entries for the table and its corrupted
+        companion are removed so stale BaseRepository singletons don't persist."""
+        app, mock_db = _make_app()
+        mock_creation, mock_updates, mock_registry, creation_record = (
+            self._make_meta_mocks(mock_db)
+        )
+
+        with patch("api.tables.get_class", return_value=MagicMock()), \
+             patch("api.tables.get_internal_model_class") as mock_get_internal, \
+             patch("api.tables.get_file_registry_model", return_value=mock_registry), \
+             patch("api.tables.reflect_db"), \
+             patch("api.tables._repo_cache", {"patients": "repo1", "patients__corrupted": "repo2", "other": "repo3"}) as mock_cache, \
+             patch("api.tables.settings") as mock_settings:
+
+            mock_settings.DLT_DATASET = "clinical_data"
+            mock_get_internal.side_effect = lambda name: (
+                mock_creation if "creation" in name else mock_updates
+            )
+
+            client = TestClient(app)
+            resp = client.delete("/api/tables/patients")
+
+        assert resp.status_code == 200
+        assert "patients" not in mock_cache
+        assert "patients__corrupted" not in mock_cache
+        assert "other" in mock_cache
+
+    def test_drops_corrupted_companion_even_when_no_metadata(self):
+        """Tables without metadata_creation records are still fully dropped."""
+        app, mock_db = _make_app()
+
+        mock_creation_cls = MagicMock()
+        mock_updates_cls = MagicMock()
+        mock_registry_cls = MagicMock()
+
+        creation_query = MagicMock()
+        creation_query.filter.return_value.all.return_value = []
+        registry_query = MagicMock()
+        registry_query.filter.return_value.delete.return_value = 0
+
+        def db_query_side_effect(cls):
+            if cls is mock_creation_cls:
+                return creation_query
+            return registry_query
+
+        mock_db.query.side_effect = db_query_side_effect
+
+        with patch("api.tables.get_class", return_value=MagicMock()), \
+             patch("api.tables.get_internal_model_class") as mock_get_internal, \
+             patch("api.tables.get_file_registry_model", return_value=mock_registry_cls), \
+             patch("api.tables.reflect_db"), \
+             patch("api.tables.settings") as mock_settings:
+
+            mock_settings.DLT_DATASET = "clinical_data"
+            mock_get_internal.side_effect = lambda name: (
+                mock_creation_cls if "creation" in name else mock_updates_cls
+            )
+
+            client = TestClient(app)
+            resp = client.delete("/api/tables/orphan_table")
+
+        assert resp.status_code == 200
+        executed_sqls = [str(c[0][0]) for c in mock_db.execute.call_args_list]
+        assert any("orphan_table" in s for s in executed_sqls)
+        assert any("orphan_table__corrupted" in s for s in executed_sqls)

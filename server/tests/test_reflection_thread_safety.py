@@ -36,9 +36,9 @@ class TestAdvisoryLock:
 
     @patch("core.database.engine")
     @patch("core.database.create_sadlock")
-    @patch("core.database.Base")
+    @patch("core.database.automap_base")
     def test_refresh_acquires_lock_around_prepare(
-        self, mock_base, mock_create_sadlock, mock_engine
+        self, mock_automap_base, mock_create_sadlock, mock_engine
     ):
         """Base.prepare must only be called inside the lock context manager."""
         from main import app
@@ -50,6 +50,8 @@ class TestAdvisoryLock:
         mock_lock = MagicMock()
         mock_create_sadlock.return_value = mock_lock
 
+        mock_base = MagicMock()
+        mock_automap_base.return_value = mock_base
         mock_base.classes.keys.return_value = ["table_a", "table_b"]
 
         client = TestClient(app)
@@ -74,9 +76,9 @@ class TestAdvisoryLock:
 
     @patch("core.database.engine")
     @patch("core.database.create_sadlock")
-    @patch("core.database.Base")
+    @patch("core.database.automap_base")
     def test_refresh_returns_error_when_reflection_fails(
-        self, mock_base, mock_create_sadlock, mock_engine
+        self, mock_automap_base, mock_create_sadlock, mock_engine
     ):
         """reflect_db re-raises reflection errors; the endpoint returns 400."""
         from main import app
@@ -88,6 +90,8 @@ class TestAdvisoryLock:
         mock_lock = MagicMock()
         mock_create_sadlock.return_value = mock_lock
 
+        mock_base = MagicMock()
+        mock_automap_base.return_value = mock_base
         mock_base.prepare.side_effect = SQLAlchemyError("reflection failed")
 
         client = TestClient(app)
@@ -176,15 +180,18 @@ class TestRaceCondition:
 
     @patch("core.database.engine")
     @patch("core.database.create_sadlock")
-    @patch("core.database.Base")
+    @patch("core.database.automap_base")
     def test_concurrent_refreshes_are_serialized(
-        self, mock_base, mock_create_sadlock, mock_engine
+        self, mock_automap_base, mock_create_sadlock, mock_engine
     ):
         from main import app
 
         mock_conn = MagicMock()
         mock_conn.__enter__.return_value = mock_conn
         mock_engine.connect.return_value = mock_conn
+
+        mock_base = MagicMock()
+        mock_automap_base.return_value = mock_base
         mock_base.classes.keys.return_value = []
 
         # Real threading lock to simulate what sqlalchemy-dlock does
@@ -253,9 +260,9 @@ class TestLockReleaseOnFailure:
 
     @patch("core.database.engine")
     @patch("core.database.create_sadlock")
-    @patch("core.database.Base")
+    @patch("core.database.automap_base")
     def test_subsequent_call_succeeds_after_failure(
-        self, mock_base, mock_create_sadlock, mock_engine
+        self, mock_automap_base, mock_create_sadlock, mock_engine
     ):
         """After a failed refresh, a second call should succeed normally."""
         from main import app
@@ -269,6 +276,9 @@ class TestLockReleaseOnFailure:
         mock_lock.__enter__ = lambda _self: real_lock.acquire()
         mock_lock.__exit__ = lambda _self, *_args: real_lock.release()
         mock_create_sadlock.return_value = mock_lock
+
+        mock_base = MagicMock()
+        mock_automap_base.return_value = mock_base
 
         # First call: fails but releases the lock
         mock_base.prepare.side_effect = SQLAlchemyError("temporary failure")
@@ -298,9 +308,9 @@ class TestSchemaRefreshConsistency:
 
     @patch("core.database.engine")
     @patch("core.database.create_sadlock")
-    @patch("core.database.Base")
+    @patch("core.database.automap_base")
     def test_new_table_appears_after_refresh(
-        self, mock_base, mock_create_sadlock, mock_engine
+        self, mock_automap_base, mock_create_sadlock, mock_engine
     ):
         from main import app
 
@@ -310,6 +320,9 @@ class TestSchemaRefreshConsistency:
 
         mock_lock = MagicMock()
         mock_create_sadlock.return_value = mock_lock
+
+        mock_base = MagicMock()
+        mock_automap_base.return_value = mock_base
 
         # Simulate: before refresh, only "existing_table" is known
         mock_base.classes.keys.return_value = ["existing_table"]
@@ -325,10 +338,10 @@ class TestSchemaRefreshConsistency:
         assert r2.status_code == 200
 
     @patch("core.database.create_sadlock")
-    @patch("core.database.Base")
+    @patch("core.database.automap_base")
     @patch("core.database.engine")
     def test_reflect_db_calls_prepare_without_reflect_flag(
-        self, mock_engine, mock_base, mock_create_sadlock
+        self, mock_engine, mock_automap_base, mock_create_sadlock
     ):
         """The startup reflect_db() does NOT pass reflect=True (initial load only)."""
         from core.database import reflect_db
@@ -340,6 +353,8 @@ class TestSchemaRefreshConsistency:
         mock_lock = MagicMock()
         mock_create_sadlock.return_value = mock_lock
 
+        mock_base = MagicMock()
+        mock_automap_base.return_value = mock_base
         mock_base.classes.keys.return_value = ["table_a"]
 
         reflect_db()

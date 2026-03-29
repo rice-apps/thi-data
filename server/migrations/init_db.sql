@@ -3,6 +3,9 @@
 -- Ensure pg_crypto for gen_random_uuid() if needed (built-in in PG 13+)
 -- CREATE EXTENSION IF NOT EXISTS "pgcrypto"
 
+-- Ensure the DLT dataset schema exists for the ETL pipeline
+CREATE SCHEMA IF NOT EXISTS clinical_data;
+
 -- Clean up legacy corrupted_rows table so it doesn't shadow DLT's version
 DROP TABLE IF EXISTS public.corrupted_rows;
 
@@ -12,8 +15,11 @@ CREATE TABLE IF NOT EXISTS public.file_registry (
   status text,
   target_table_name text,
   error_message text,
+  uploaded_by text,
   CONSTRAINT file_registry_pkey PRIMARY KEY (file_id)
 );
+-- Idempotent backfill for existing deployments that predate the uploaded_by column
+ALTER TABLE public.file_registry ADD COLUMN IF NOT EXISTS uploaded_by text;
 
 CREATE TABLE IF NOT EXISTS public.metadata_creation (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

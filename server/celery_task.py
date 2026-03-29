@@ -2,7 +2,7 @@ from celery import Celery
 from typing import Union
 
 import core.config as config
-from core.deps import get_db_context, get_storage_provider, get_file_registry_repo, init_app_services
+from core.deps import get_db_context, get_storage_provider, get_file_registry_repo, init_app_services, get_internal_model_class_raw
 from services.etl_processor import process_file as run_etl
 from core.enums import FileStatus
 import logging
@@ -80,7 +80,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
     update_file_status(file_id, FileStatus.PROCESSING)
 
     try:
-        # Get object key and target table name from registry
+        # Get object key, target table name, and uploader from registry
         with get_db_context() as db:
             records = get_file_registry_repo().get_by_field(
                 db=db,
@@ -91,6 +91,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
                 raise ValueError(f"File ID {file_id} not found in registry")
             object_key = records[0].object_key
             target_table_name = records[0].target_table_name
+            uploaded_by = records[0].uploaded_by or "unknown"
 
         # Get local file path via StorageProvider
         storage_provider = get_storage_provider()
@@ -101,8 +102,21 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
 
         # Run ETL logic
         error_count = run_etl(str(file_path), proposed_schema, target_table_name=target_table_name)
-        
+
         update_file_status(file_id, FileStatus.SUCCESS)
+
+        # Record who uploaded the file so the frontend can display "Uploaded By" / dates
+        try:
+            MetadataCreation = get_internal_model_class_raw("metadata_creation")
+            with get_db_context() as db:
+                db.add(MetadataCreation(table_name=target_table_name, created_by=uploaded_by))
+                db.flush()
+            logger.info(f"metadata_creation record saved for {target_table_name}")
+        except Exception as meta_err:
+            logger.error(
+                f"Failed to create metadata_creation record for {target_table_name}: {meta_err}",
+                exc_info=True,
+            )
 
         # AUTO-CLEANUP: Only on success.
         try:

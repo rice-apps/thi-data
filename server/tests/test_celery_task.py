@@ -378,3 +378,123 @@ class TestUpdateFileStatus:
             search_value="file-1",
             update_data={"status": "FAILED", "error_message": "something broke"},
         )
+
+
+# ---------------------------------------------------------------------------
+# Metadata creation persistence (Bug 1)
+# ---------------------------------------------------------------------------
+
+class TestMetadataCreation:
+
+    @patch("celery_task.notify_frontend")
+    @patch("celery_task._refresh_api_server")
+    @patch("celery_task.get_storage_provider")
+    @patch("celery_task.get_db_context")
+    @patch("celery_task.update_file_status")
+    @patch("celery_task.run_etl")
+    @patch("celery_task.get_internal_model_class_raw")
+    def test_metadata_creation_record_persisted(
+        self, mock_get_model, mock_etl, mock_update_status,
+        mock_get_db_ctx, mock_get_storage, mock_refresh, mock_notify
+    ):
+        """After successful ETL, a metadata_creation record is inserted with
+        the correct table_name and created_by values, and flush is called."""
+        from celery_task import process_patient_file
+
+        mock_etl.return_value = 0
+        mock_meta_cls = MagicMock()
+        mock_get_model.return_value = mock_meta_cls
+
+        mock_record = MagicMock()
+        mock_record.object_key = "uploads/test.csv"
+        mock_record.target_table_name = "my_table"
+        mock_record.uploaded_by = "alice"
+
+        db_sessions = []
+
+        @contextmanager
+        def fake_ctx():
+            db = MagicMock()
+            db_sessions.append(db)
+            yield db
+
+        mock_get_db_ctx.side_effect = fake_ctx
+
+        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+            mock_repo = MagicMock()
+            mock_repo.get_by_field.return_value = [mock_record]
+            mock_get_repo.return_value = mock_repo
+
+            result = process_patient_file._orig_run("file-meta", {"a": "VARCHAR"})
+
+        assert result["status"] == "SUCCESS"
+        mock_get_model.assert_called_once_with("metadata_creation")
+        mock_meta_cls.assert_called_once_with(table_name="my_table", created_by="alice")
+
+        # One of the sessions should have had add + flush called
+        metadata_db = [s for s in db_sessions if s.add.called and s.flush.called]
+        assert len(metadata_db) == 1
+
+    @patch("celery_task.notify_frontend")
+    @patch("celery_task._refresh_api_server")
+    @patch("celery_task.get_storage_provider")
+    @patch("celery_task.get_db_context")
+    @patch("celery_task.update_file_status")
+    @patch("celery_task.run_etl")
+    @patch("celery_task.get_internal_model_class_raw")
+    def test_metadata_failure_does_not_block_task(
+        self, mock_get_model, mock_etl, mock_update_status,
+        mock_get_db_ctx, mock_get_storage, mock_refresh, mock_notify
+    ):
+        """If metadata_creation insertion fails, the task still returns SUCCESS."""
+        from celery_task import process_patient_file
+
+        mock_etl.return_value = 0
+        mock_get_model.side_effect = RuntimeError("model not found")
+
+        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+            _setup_mocks(mock_get_db_ctx, mock_get_storage, mock_get_repo)
+
+            result = process_patient_file._orig_run("file-meta-fail", {"a": "VARCHAR"})
+
+        assert result["status"] == "SUCCESS"
+        mock_refresh.assert_called_once()
+
+    @patch("celery_task.notify_frontend")
+    @patch("celery_task._refresh_api_server")
+    @patch("celery_task.get_storage_provider")
+    @patch("celery_task.get_db_context")
+    @patch("celery_task.update_file_status")
+    @patch("celery_task.run_etl")
+    @patch("celery_task.get_internal_model_class_raw")
+    def test_metadata_uses_uploaded_by_from_registry(
+        self, mock_get_model, mock_etl, mock_update_status,
+        mock_get_db_ctx, mock_get_storage, mock_refresh, mock_notify
+    ):
+        """The created_by field in metadata_creation comes from file_registry.uploaded_by."""
+        from celery_task import process_patient_file
+
+        mock_etl.return_value = 0
+        mock_meta_cls = MagicMock()
+        mock_get_model.return_value = mock_meta_cls
+
+        mock_record = MagicMock()
+        mock_record.object_key = "uploads/data.csv"
+        mock_record.target_table_name = "patient_data"
+        mock_record.uploaded_by = None  # No user name set
+
+        @contextmanager
+        def fake_ctx():
+            yield MagicMock()
+
+        mock_get_db_ctx.side_effect = fake_ctx
+
+        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+            mock_repo = MagicMock()
+            mock_repo.get_by_field.return_value = [mock_record]
+            mock_get_repo.return_value = mock_repo
+
+            process_patient_file._orig_run("file-anon", {"a": "VARCHAR"})
+
+        # When uploaded_by is None, falls back to "unknown"
+        mock_meta_cls.assert_called_once_with(table_name="patient_data", created_by="unknown")

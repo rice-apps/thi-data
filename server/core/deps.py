@@ -33,6 +33,16 @@ def get_repository(model_class: Any) -> BaseRepository:
         _repo_cache[table_name] = BaseRepository(model_class)
     return _repo_cache[table_name]
 
+def clear_caches():
+    """Reset all cached repositories and singletons.
+
+    Must be called after reflect_db() swaps the global Base, because
+    old cached repositories hold model classes from the previous Base.
+    """
+    global _file_registry_repo
+    _file_registry_repo = None
+    _repo_cache.clear()
+
 def init_app_services(storage_provider: StorageProvider = None) -> None:
     """
     Centralized initialization for BOTH FastAPI and Celery Workers.
@@ -124,5 +134,16 @@ def get_internal_model_class(table_name: str) -> Any:
         raise HTTPException(
             status_code=500,
             detail=f"Configuration error: '{table_name}' table not found. Ensure reflect_db() was called."
+        )
+    return model_class
+
+
+def get_internal_model_class_raw(table_name: str) -> Any:
+    """Like get_internal_model_class but raises RuntimeError instead of HTTPException.
+    Use this in Celery workers and other non-HTTP contexts."""
+    model_class = get_class(table_name)
+    if not model_class:
+        raise RuntimeError(
+            f"Configuration error: '{table_name}' table not found. Ensure reflect_db() was called."
         )
     return model_class

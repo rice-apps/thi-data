@@ -15,11 +15,11 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 # Test model + database setup
 # ---------------------------------------------------------------------------
 
-class TestBase(DeclarativeBase):
+class DummyModelBase(DeclarativeBase):
     pass
 
 
-class Item(TestBase):
+class Item(DummyModelBase):
     __tablename__ = "items"
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100))
@@ -31,9 +31,9 @@ class Item(TestBase):
 def db_session():
     """Create an in-memory SQLite database and yield a session."""
     engine = create_engine("sqlite:///:memory:")
-    TestBase.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine)
-    session = Session()
+    DummyModelBase.metadata.create_all(engine)
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    session = TestingSessionLocal()
     yield session
     session.close()
 

@@ -2,9 +2,11 @@ from fastapi import APIRouter, HTTPException, Depends
 from crud.metadata import get_tables_metadata, get_database_size
 from typing import Any
 from sqlalchemy.orm import Session
-from core.database import Base
-from core.deps import get_db, get_model_class, get_internal_model_class
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
+import core.database as db_module
+from core.database import get_class, reflect_db
+from core.deps import get_db, get_model_class, get_internal_model_class, get_file_registry_model, _repo_cache
+from core.config import settings
 import logging
 
 from core.constants import UNLISTED_TABLES, HIDDEN_TABLE_SUFFIXES
@@ -20,7 +22,7 @@ def get_all_tables():
     excluding internal metadata tables.
     """
     logger.info("Getting all tables from database")
-    all_tables = list(Base.classes.keys())
+    all_tables = list(db_module.Base.classes.keys())
     visible_tables = [t for t in all_tables if _is_visible(t)]
     logger.info(f"Retrieved {len(visible_tables)} visible tables out of {len(all_tables)} total tables")
     return {"tables": visible_tables}
@@ -40,7 +42,7 @@ def get_tables_with_metadata(db: Session = Depends(get_db)):
     Uses bulk fetching for performance.
     """
     logger.info("Getting all tables with metadata")
-    all_tables = list(Base.classes.keys())
+    all_tables = list(db_module.Base.classes.keys())
     visible_tables = [t for t in all_tables if _is_visible(t)]
     logger.debug(f"Found {len(visible_tables)} visible tables")
     
@@ -68,6 +70,37 @@ def get_table_schema(
     columns = [c.key for c in mapper.column_attrs if c.key not in ("id", "original_csv_row_id")]
     logger.info(f"Retrieved {len(columns)} columns for table {table_name}")
     return {"columns": columns}
+
+
+@router.delete("/api/tables/{table_name}")
+def delete_table(table_name: str, db: Session = Depends(get_db)):
+    if not _is_visible(table_name):
+        raise HTTPException(status_code=403, detail=f"Deletion of '{table_name}' is not permitted.")
+
+    if not get_class(table_name):
+        raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found.")
+
+    dlt_schema = settings.DLT_DATASET
+    MetadataCreation = get_internal_model_class("metadata_creation")
+    MetadataUpdates = get_internal_model_class("metadata_updates")
+    FileRegistry = get_file_registry_model()
+
+    for record in db.query(MetadataCreation).filter(MetadataCreation.table_name == table_name).all():
+        db.query(MetadataUpdates).filter(MetadataUpdates.foreign_key == record.id).delete()
+        db.delete(record)
+
+    db.query(FileRegistry).filter(FileRegistry.target_table_name == table_name).delete()
+
+    db.execute(text(f'DROP TABLE IF EXISTS {dlt_schema}."{table_name}"'))
+    db.execute(text(f'DROP TABLE IF EXISTS {dlt_schema}."{table_name}__corrupted"'))
+
+    db.commit()
+    reflect_db()
+
+    _repo_cache.pop(table_name, None)
+    _repo_cache.pop(f"{table_name}__corrupted", None)
+
+    return {"deleted": table_name}
 
 
 @router.get("/api/get_size/{table_name}")

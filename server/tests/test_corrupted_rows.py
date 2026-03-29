@@ -20,7 +20,8 @@ server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
 
 from core.deps import get_db
-from core.database import Base, reflect_db
+import core.database as db_module
+from core.database import reflect_db
 from crud.base import BaseRepository, model_to_dict
 from sqlalchemy import Integer, Float, Boolean, String
 TARGET_TABLE = "test_database"  # Must have integer 'age' column for validation tests
@@ -38,7 +39,7 @@ def setup_target_row():
     Yields the target_row_id. Cleans up on teardown.
     """
     reflect_db()
-    target_model = Base.classes.get(TARGET_TABLE)
+    target_model = db_module.Base.classes.get(TARGET_TABLE)
 
     if not target_model:
         pytest.fail(f"Test setup failed: Could not find model for '{TARGET_TABLE}'")

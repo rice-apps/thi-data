@@ -64,4 +64,6 @@ export interface IDataService {
   checkDuplicate(
     tableName: string
   ): Promise<{ table_name: string; exists: boolean }>;
+
+  deleteTable(tableName: string): Promise<{ deleted: string }>;
 }

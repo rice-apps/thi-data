@@ -10,7 +10,8 @@ server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
 
 from core.deps import get_db
-from core.database import Base, reflect_db
+import core.database as db_module
+from core.database import reflect_db
 from crud.base import BaseRepository, model_to_dict
 
 METADATA_CREATION_TABLE = "metadata_creation"
@@ -20,7 +21,7 @@ API_URL = "http://localhost:8000"
 @pytest.fixture(scope="function")
 def setup_metadata_creation():
     reflect_db()
-    model_class = Base.classes.get(METADATA_CREATION_TABLE)
+    model_class = db_module.Base.classes.get(METADATA_CREATION_TABLE)
     if not model_class:
         pytest.fail(f"Test setup failed: Could not find model for table '{METADATA_CREATION_TABLE}'")
 
@@ -54,7 +55,7 @@ def test_metadata_creation_endpoint():
     }
     
     reflect_db()
-    model_class = Base.classes.get(METADATA_CREATION_TABLE)
+    model_class = db_module.Base.classes.get(METADATA_CREATION_TABLE)
     db = next(get_db())
     
     created_id = None
@@ -107,7 +108,7 @@ def test_metadata_update_endpoint(setup_metadata_creation):
     }
     
     reflect_db()
-    model_class = Base.classes.get(METADATA_UPDATES_TABLE)
+    model_class = db_module.Base.classes.get(METADATA_UPDATES_TABLE)
     db = next(get_db())
     
     created_id = None

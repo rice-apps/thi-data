@@ -9,7 +9,8 @@ server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
 
 from core.deps import get_db
-from core.database import Base, reflect_db
+import core.database as db_module
+from core.database import reflect_db
 from core.enums import FileStatus
 from crud.base import BaseRepository, model_to_dict
 
@@ -17,7 +18,7 @@ API_URL = "http://localhost:8000"
 @pytest.fixture(scope="function")
 def setup_file_registry():
     reflect_db()
-    FileRegistry = Base.classes.get("file_registry")
+    FileRegistry = db_module.Base.classes.get("file_registry")
     if not FileRegistry:
        pytest.fail("File registry not found in database.")
 
@@ -66,7 +67,7 @@ def test_delete_file_registry(setup_file_registry):
     assert data["status"] == FileStatus.DELETED
 
     reflect_db()
-    FileRegistry = Base.classes.get("file_registry")
+    FileRegistry = db_module.Base.classes.get("file_registry")
     db = next(get_db())
     records = BaseRepository(FileRegistry).get_by_field(db, field_name="file_id", value=file_id)
     db.close()

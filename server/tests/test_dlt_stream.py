@@ -181,11 +181,11 @@ class TestPipelineInvocation:
         mock_postgres.assert_called_once_with(credentials="postgresql://user:pass@host/db")
 
         # Pipeline is created with the postgres destination object
-        mock_dlt.pipeline.assert_called_once_with(
-            pipeline_name="duckdb_to_postgres",
-            destination=mock_postgres_dest,
-            dataset_name="clinical_data",
-        )
+        mock_dlt.pipeline.assert_called_once()
+        call_kwargs = mock_dlt.pipeline.call_args[1]
+        assert call_kwargs["pipeline_name"].startswith("duckdb_to_postgres_")
+        assert call_kwargs["destination"] == mock_postgres_dest
+        assert call_kwargs["dataset_name"] == "clinical_data"
 
     @patch("services.dlt_pipeline.dlt")
     def test_write_disposition_is_replace(

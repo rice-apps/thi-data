@@ -7,6 +7,7 @@ import { useProcessing } from '@/components/ProcessingProvider';
 import { COLORS, BRANDING } from '@/constants';
 import { Spinner } from '@/components/Spinner';
 import { SearchInput } from '@/components/SearchInput';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { formatValue } from '@/utils/formatters';
 import type { TableMetadata } from '@/types';
 import { signOutAction } from '../auth/actions';
@@ -20,6 +21,8 @@ export default function HomeScreen() {
   const [hoveredTable, setHoveredTable] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [fabHovered, setFabHovered] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchTables = useCallback(() => {
     dataService
@@ -39,6 +42,21 @@ export default function HomeScreen() {
 
   const handleSignOut = async () => {
     await signOutAction();
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await dataService.deleteTable(deleteTarget);
+      setTables((prev) => prev.filter((t) => t.name !== deleteTarget));
+      fetchTables();
+    } catch (err) {
+      console.error('Failed to delete table:', err);
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
   };
 
   return (
@@ -86,7 +104,8 @@ export default function HomeScreen() {
             <div className="col-span-2">Uploaded By</div>
             <div className="col-span-2">Date Uploaded</div>
             <div className="col-span-2">Date Modified</div>
-            <div className="col-span-2 text-right">Size</div>
+            <div className="col-span-1 text-right">Size</div>
+            <div className="col-span-1" />
           </div>
 
           {loading ? (
@@ -131,7 +150,7 @@ export default function HomeScreen() {
                     {formatValue(table.dateModified)}
                   </div>
                   <div
-                    className={`col-span-2 text-right ${table.size ? 'text-slate-600' : 'text-slate-400 italic'}`}
+                    className={`col-span-1 text-right ${table.size ? 'text-slate-600' : 'text-slate-400 italic'}`}
                   >
                     <span className="inline-flex items-center gap-1">
                       {table.size && (
@@ -152,12 +171,48 @@ export default function HomeScreen() {
                       {formatValue(table.size)}
                     </span>
                   </div>
+                  <div className="col-span-1 flex justify-end items-center">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget(table.name);
+                      }}
+                      className={`p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all duration-150 ${
+                        hoveredTable === table.name ? 'opacity-100' : 'opacity-0'
+                      }`}
+                      aria-label={`Delete ${table.name}`}
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
       </main>
+
+      <ConfirmModal
+        isOpen={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete table"
+        message={`Permanently delete "${deleteTarget}" along with its corrupted rows and metadata? This cannot be undone.`}
+        confirmLabel="Delete"
+        loading={deleting}
+      />
 
       {/* Floating Action Button */}
       <button

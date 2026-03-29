@@ -10,7 +10,8 @@ server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
 
 from core.deps import get_db, get_model_class
-from core.database import Base, reflect_db
+import core.database as db_module
+from core.database import reflect_db
 from crud.base import BaseRepository, model_to_dict
 
 TABLE = "test_database" 
@@ -25,7 +26,7 @@ API_URL = "http://localhost:8000"
 def setup_item():
     # --- 0. Load database models ---
     reflect_db() 
-    model_class = Base.classes.get(TABLE)
+    model_class = db_module.Base.classes.get(TABLE)
     
     if not model_class:
         pytest.fail(f"Test setup failed: Could not find model for table '{TABLE}'")
@@ -62,7 +63,7 @@ def setup_item():
 def setup_metadata_creation():
     # --- 0. Load database models ---
     reflect_db()
-    model_class = Base.classes.get(METADATA_CREATION_TABLE)
+    model_class = db_module.Base.classes.get(METADATA_CREATION_TABLE)
     if not model_class:
         pytest.fail(f"Test setup failed: Could not find model for table '{METADATA_CREATION_TABLE}'")
 
@@ -198,7 +199,7 @@ def test_update_item(setup_item):
 def test_delete_item():
     # --- 1. Setup: Manually create an item to delete ---
     reflect_db()
-    model_class = Base.classes.get(TABLE)
+    model_class = db_module.Base.classes.get(TABLE)
 
     if not model_class:
         pytest.fail(f"Test setup failed: Could not find model for table '{TABLE}'")
@@ -259,7 +260,7 @@ def test_metadata_update(setup_metadata_creation):
     
     update_item_id = None
     reflect_db()
-    update_model_class = Base.classes.get(METADATA_UPDATE_TABLE)
+    update_model_class = db_module.Base.classes.get(METADATA_UPDATE_TABLE)
     db = next(get_db())
     
     if not update_model_class:

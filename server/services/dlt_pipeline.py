@@ -1,7 +1,10 @@
 import dlt
 from dlt.destinations import postgres
+from uuid import uuid4
 
+from sqlalchemy import text
 from core.config import settings
+from core.database import engine
 import logging
 
 logger = logging.getLogger(__name__)
@@ -20,17 +23,18 @@ class DLTPipeline:
         corrupted_table_name = f"{table_name}__corrupted"
 
         logger.info("Starting DLT pipeline to load data to Postgres")
+
+        with engine.begin() as conn:
+            conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {self.dataset_name}"))
+
+        # Use a unique pipeline name per run to avoid stale pending package state
+        # from prior failed runs interfering with the current load.
+        pipeline_name = f"duckdb_to_postgres_{uuid4().hex[:12]}"
         pipeline = dlt.pipeline(
-            pipeline_name='duckdb_to_postgres',
+            pipeline_name=pipeline_name,
             destination=self.destination,
             dataset_name=self.dataset_name,
         )
-
-        # Drop stale pending packages from previous failed runs
-        try:
-            pipeline.drop_pending_packages()
-        except Exception:
-            pass
 
         logger.info(f"DLT pipeline created: destination={self.destination}, dataset={self.dataset_name}")
 

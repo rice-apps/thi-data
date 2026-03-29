@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Header
 from pydantic import BaseModel
 from typing import Optional, Dict
 import re
@@ -49,6 +49,7 @@ def check_duplicate(
 async def upload_file(
     file: UploadFile = File(...),
     table_name: Optional[str] = None,
+    x_user_name: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
     storage_provider: StorageProvider = Depends(get_storage_provider),
     repo: BaseRepository = Depends(get_file_registry_repo),
@@ -71,6 +72,7 @@ async def upload_file(
                 "object_key": object_key,
                 "status": FileStatus.UPLOADED,
                 "target_table_name": table_name,
+                "uploaded_by": x_user_name,
             },
         )
 
@@ -132,7 +134,7 @@ def update_file_registry(
     db: Session = Depends(get_db),
     repo: BaseRepository = Depends(get_file_registry_repo),
 ):
-    update_data = update.dict(exclude_unset=True)
+    update_data = update.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields provided to update")
 

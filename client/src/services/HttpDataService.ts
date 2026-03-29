@@ -175,4 +175,12 @@ export class HttpDataService implements IDataService {
       { headers }
     );
   }
+
+  async deleteTable(tableName: string): Promise<{ deleted: string }> {
+    const headers = await this.getAuthHeaders();
+    return this.httpClient.delete<{ deleted: string }>(
+      `tables/${encodeURIComponent(tableName)}`,
+      { headers }
+    );
+  }
 }
