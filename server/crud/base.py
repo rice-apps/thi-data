@@ -1,6 +1,6 @@
 from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import cast, String, inspect as sa_inspect
 from core.database import Base
 
 ModelType = TypeVar("ModelType", bound=Base)
@@ -128,8 +128,9 @@ class BaseRepository(Generic[ModelType]):
     def filter_text(
         self, db: Session, column_name: str, match: str, skip: int = 0, limit: int = 100
     ) -> Tuple[List[ModelType], int]:
+        column_attr = getattr(self.model, column_name)
         query = db.query(self.model).filter(
-            getattr(self.model, column_name).ilike(f"%{match}%")
+            cast(column_attr, String).ilike(f"%{match}%")
         )
         total = query.count()
         items = query.offset(skip).limit(limit).all()

@@ -158,6 +158,23 @@ class TestBaseRepository:
         assert total == 10
         assert len(results) == 3
 
+    def test_filter_numeric_column(self, db_session, repo):
+        # Create items with known IDs (autoincrement usually guarantees 1, 2, 3...)
+        # We will search the 'id' column for the string "2"
+        repo.create(db_session, {"name": "Test1"})
+        repo.create(db_session, {"name": "Test2"})
+        repo.create(db_session, {"name": "Test12"})
+
+        # Search for "2" in the integer 'id' column
+        # Should match ID 2 and ID 12 (if they were 2 and 12, but sqlite gives 1, 2, 3)
+        # Let's verify by just asserting no crash and valid results
+        results, total = repo.filter_text(db_session, "id", "2")
+        
+        # ID is 2, so it should be found
+        assert total == 1
+        assert len(results) == 1
+        assert results[0].id == 2
+
 
 class TestModelToDict:
 
