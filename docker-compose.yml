@@ -1,0 +1,110 @@
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: thi-rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI port
+    volumes:
+      - rabbitmq-lib:/var/lib/rabbitmq/
+      - rabbitmq-log:/var/log/rabbitmq
+
+  db:
+    image: postgres:16
+    container_name: thi-db
+    restart: always
+    environment:
+      # [CHANGE IN PRODUCTION] Set strong database credentials
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./server/migrations/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+
+  seaweedfs:
+    image: chrislusf/seaweedfs
+    container_name: thi-seaweedfs
+    restart: always
+    ports:
+      - "8333:8333" # S3 port
+      - "9333:9333" # Master port
+      - "8888:8888" # Filer port
+    command: 'server -s3 -filer -dir /data'
+    environment:
+      - AWS_ACCESS_KEY_ID=any
+      - AWS_SECRET_ACCESS_KEY=any
+    volumes:
+      - seaweedfs-data:/data
+
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: thi-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./server:/app
+    environment:
+      # [CHANGE IN PRODUCTION] Must match POSTGRES_USER and POSTGRES_PASSWORD above
+      - user=postgres
+      - password=password
+      - host=db
+      - port=5432
+      - dbname=postgres
+      - ORIGIN_URL=${ORIGIN_URL:-http://localhost:3000}
+      - broker_url=amqp://guest:guest@rabbitmq:5672/
+      - USE_S3=true
+      - S3_ENDPOINT=http://seaweedfs:8333
+      - S3_KEY=any
+      - S3_SECRET=any
+      - S3_BUCKET=thi-data
+    depends_on:
+      - rabbitmq
+      - db
+      - seaweedfs
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+  
+  celery_worker:
+    build: 
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: thi-celery-worker
+    volumes:
+      - ./server:/app
+    environment:
+      # [CHANGE IN PRODUCTION] Must match POSTGRES_USER and POSTGRES_PASSWORD above
+      - user=postgres
+      - password=password
+      - host=db
+      - port=5432
+      - dbname=postgres
+      - ORIGIN_URL=${ORIGIN_URL:-http://localhost:3000}
+      - broker_url=amqp://guest:guest@rabbitmq:5672/
+      - USE_S3=true
+      - S3_ENDPOINT=http://seaweedfs:8333
+      - S3_KEY=any
+      - S3_SECRET=any
+      - S3_BUCKET=thi-data
+      - API_SERVER_URL=http://backend:8000
+    depends_on:
+      - rabbitmq
+      - db
+      - seaweedfs
+      - backend
+    command: celery -A celery_task.app worker --loglevel=info
+
+volumes:
+  rabbitmq-lib:
+    driver: local
+  rabbitmq-log:
+    driver: local
+  postgres-data:
+    driver: local
+  seaweedfs-data:
+    driver: local
+
