@@ -26,17 +26,13 @@ sys.path.insert(0, server_dir)
 
 from core.enums import FileStatus
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+# Test fixtures
 
 API_URL = "http://localhost:8000"
 TEST_CSV_PATH = os.path.join(current_dir, "test_data.csv")
 
 
-# ===========================================================================
-# 1. Unit Tests: validate_and_split_data edge cases
-# ===========================================================================
+# Unit Tests: validate_and_split_data edge cases
 
 class TestValidateAndSplitEdgeCases:
     """Edge cases for the core DuckDB TRY_CAST validation logic."""
@@ -133,9 +129,7 @@ class TestValidateAndSplitEdgeCases:
         assert "original_csv_row_id" in corrupted_cols
 
 
-# ===========================================================================
-# 2. Unit Tests: Process file endpoint (POST /api/files/{file_id}/process)
-# ===========================================================================
+# Unit Tests: Process file endpoint tests
 
 class TestProcessFileEndpoint:
     """Test the process_file endpoint with mocked deps."""
@@ -215,9 +209,7 @@ class TestProcessFileEndpoint:
         assert response.status_code == 404
 
 
-# ===========================================================================
-# 3. Unit Tests: Validate schema endpoint (POST /api/validate_schema)
-# ===========================================================================
+# Unit Tests: Validate schema endpoint tests
 
 class TestValidateSchemaEndpoint:
     """Test the validate_schema endpoint with mocked deps."""
@@ -373,9 +365,7 @@ class TestValidateSchemaEndpoint:
         )
 
 
-# ===========================================================================
-# 4. Integration Tests: Full flow (requires docker compose up)
-# ===========================================================================
+# Integration Tests: Full flow tests
 
 class TestSchemaValidationIntegration:
     """Integration tests hitting the live API.
@@ -484,9 +474,7 @@ class TestSchemaValidationIntegration:
 
 
 
-# ===========================================================================
-# 5. Error message sanitization
-# ===========================================================================
+# Error message sanitization tests
 
 class TestErrorSanitization:
     """Verify error messages don't leak technical details."""

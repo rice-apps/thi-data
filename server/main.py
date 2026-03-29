@@ -32,13 +32,11 @@ app.add_middleware(
     allow_headers=["*"], 
 )
 
-# --- API Endpoints ---
 
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
 
-# Include Routers
 app.include_router(corrupted_rows.router)
 app.include_router(validation.router)
 app.include_router(metadata.router)

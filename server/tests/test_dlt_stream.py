@@ -18,7 +18,6 @@ from unittest.mock import patch, MagicMock
 import duckdb
 import pyarrow as pa
 
-# Add the 'server' directory to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
@@ -29,9 +28,7 @@ RAW_DATA_NAME = "raw_staging"
 CLEAN_DATA_NAME = "clean_data"
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
+# Test fixtures
 
 @pytest.fixture
 def duckdb_con():
@@ -75,9 +72,7 @@ def seed_clean_and_corrupted(con, clean_rows, corrupted_rows):
         )
 
 
-# ===========================================================================
-# 1. Arrow Table Extraction — DuckDB tables become Arrow tables for dlt
-# ===========================================================================
+# Arrow Table Extraction tests
 
 class TestArrowTableExtraction:
     """Verify that load_to_postgres extracts Arrow tables from DuckDB
@@ -148,9 +143,7 @@ class TestArrowTableExtraction:
             assert table.num_rows == 0
 
 
-# ===========================================================================
-# 2. Postgres COPY Simulation — verify dlt pipeline is invoked (not INSERT)
-# ===========================================================================
+# Postgres COPY Simulation tests
 
 class TestPipelineInvocation:
     """The codebase relies on dlt's pipeline.run to use Postgres COPY
@@ -225,9 +218,7 @@ class TestPipelineInvocation:
         assert second_call[1]["table_name"] == "owls__corrupted"
 
 
-# ===========================================================================
-# 3. Schema Evolution Conflict — type change in Arrow buffer
-# ===========================================================================
+# Schema Evolution Conflict tests
 
 class TestSchemaEvolutionConflict:
     """Test behavior when dlt encounters a column type mismatch between
@@ -278,9 +269,7 @@ class TestSchemaEvolutionConflict:
         assert mock_pipeline_instance.run.call_count == 2
 
 
-# ===========================================================================
-# 4. Network Failure — Celery task reflects failure and enables retry
-# ===========================================================================
+# Network Failure tests
 
 class TestNetworkFailurePersistence:
     """Mock a connection timeout during the ETL run and verify the Celery
@@ -571,9 +560,7 @@ class TestNetworkFailurePersistence:
         mock_notify.assert_called_once()
 
 
-# ===========================================================================
-# 5. Type Coercion Mapping — Arrow types map to correct Postgres equivalents
-# ===========================================================================
+# Type Coercion Mapping tests
 
 class TestTypeCoercionMapping:
     """Verify that specific DuckDB/Arrow types (Decimal128, Timestamp

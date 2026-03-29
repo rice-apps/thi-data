@@ -6,9 +6,6 @@ from unittest.mock import patch, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-# Add the 'server' directory to sys.path
-
-# Add the 'server' directory to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
@@ -77,9 +74,7 @@ async def test_async_event_stream_filters_by_file_id_and_yields_event():
         assert captured["unsubscribed"][1] == "file-1"
 
 
-# ===========================================================================
-# SSE Format Tests
-# ===========================================================================
+# SSE Format tests
 
 class TestFormatSSE:
     """Verify that _format_sse produces correct SSE wire format."""
@@ -243,9 +238,7 @@ async def test_async_stream_ignores_other_file_ids():
         await agen.aclose()
 
 
-# ===========================================================================
-# Broadcaster filtering
-# ===========================================================================
+# Broadcaster filtering tests
 
 class TestBroadcasterFiltering:
     """_PgNotifyBroadcaster._dispatch should filter by wanted file_id."""
@@ -295,9 +288,7 @@ class TestBroadcasterFiltering:
         loop.close()
 
 
-# ===========================================================================
-# Generator exhaustion after terminal event
-# ===========================================================================
+# Generator exhaustion tests
 
 class TestSSEGeneratorExhaustion:
     """After a terminal event the async generator should be exhausted."""
@@ -333,9 +324,7 @@ class TestSSEGeneratorExhaustion:
                 await anext(agen)
 
 
-# ===========================================================================
 # _get_file_registry_status tests
-# ===========================================================================
 
 class TestGetFileRegistryStatus:
     """Test the _get_file_registry_status helper function."""
@@ -384,9 +373,7 @@ class TestGetFileRegistryStatus:
         assert result is None
 
 
-# ===========================================================================
-# Stream without file_id
-# ===========================================================================
+# Stream without file_id tests
 
 class TestStreamEventsNoFileId:
 

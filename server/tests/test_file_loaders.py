@@ -35,9 +35,7 @@ from services.file_loaders import create_raw_table, _load_csv, _load_xlsx
 from services.etl_processor import _validate_and_split_data
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
+# Test fixtures
 
 @pytest.fixture
 def duckdb_con():
@@ -62,9 +60,7 @@ def test_xlsx_path():
     return path
 
 
-# ===========================================================================
-# CSV Loader
-# ===========================================================================
+# CSV Loader tests
 
 class TestCSVLoader:
 
@@ -83,9 +79,7 @@ class TestCSVLoader:
             assert data_type == "VARCHAR", f"Column '{col_name}' is {data_type}"
 
 
-# ===========================================================================
-# XLSX Loader
-# ===========================================================================
+# XLSX Loader tests
 
 class TestXLSXLoader:
 
@@ -139,9 +133,7 @@ class TestXLSXLoader:
             os.unlink(tmp_path)
 
 
-# ===========================================================================
-# CSV vs XLSX Equivalence
-# ===========================================================================
+# CSV vs XLSX Equivalence tests
 
 class TestCSVXLSXEquivalence:
 
@@ -203,9 +195,7 @@ class TestCSVXLSXEquivalence:
             con_xlsx.close()
 
 
-# ===========================================================================
-# Registry / Dispatch
-# ===========================================================================
+# Registry / Dispatch tests
 
 class TestRegistry:
 

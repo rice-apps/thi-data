@@ -10,9 +10,7 @@ from unittest.mock import patch, MagicMock, call
 from contextlib import contextmanager
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# Test helpers
 
 @contextmanager
 def _fake_db_context():
@@ -46,9 +44,7 @@ def _setup_mocks(mock_get_db_ctx, mock_get_storage, mock_get_repo=None, object_k
     return mock_db, mock_storage
 
 
-# ---------------------------------------------------------------------------
-# process_patient_file
-# ---------------------------------------------------------------------------
+# process_patient_file tests
 
 class TestProcessPatientFile:
 
@@ -235,9 +231,7 @@ class TestProcessPatientFile:
         assert result["status"] == "SUCCESS"
 
 
-# ---------------------------------------------------------------------------
-# notify_frontend
-# ---------------------------------------------------------------------------
+# notify_frontend tests
 
 class TestNotifyFrontend:
 
@@ -280,9 +274,7 @@ class TestNotifyFrontend:
         mock_conn.close.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# _refresh_api_server
-# ---------------------------------------------------------------------------
+# _refresh_api_server tests
 
 class TestRefreshApiServer:
 
@@ -323,9 +315,7 @@ class TestRefreshApiServer:
         assert mock_requests.post.call_count == 2
 
 
-# ---------------------------------------------------------------------------
-# update_file_status
-# ---------------------------------------------------------------------------
+# update_file_status tests
 
 class TestUpdateFileStatus:
 
@@ -380,9 +370,7 @@ class TestUpdateFileStatus:
         )
 
 
-# ---------------------------------------------------------------------------
-# Metadata creation persistence (Bug 1)
-# ---------------------------------------------------------------------------
+# Metadata creation persistence tests
 
 class TestMetadataCreation:
 

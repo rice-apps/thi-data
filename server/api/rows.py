@@ -22,7 +22,7 @@ def log_metadata_update(db: Session, table_name: str, user_name: str = "system")
         MetadataCreation = get_internal_model_class("metadata_creation")
         MetadataUpdates = get_internal_model_class("metadata_updates")
 
-        # 1. Find the creation record ID for this table
+        # Find the creation record ID for this table
         stmt = select(MetadataCreation).where(MetadataCreation.table_name == table_name)
         creation_record = db.execute(stmt).scalars().first()
 
@@ -47,7 +47,7 @@ def log_metadata_update(db: Session, table_name: str, user_name: str = "system")
             creation_id = creation_record.file_id
             logger.debug(f"Found existing creation record with id: {creation_id}")
 
-        # 2. Create the update record
+        # Create the update record
         new_update = MetadataUpdates(
             foreign_key=creation_id,
             updated_by=user_name,

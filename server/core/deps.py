@@ -13,7 +13,7 @@ from crud.base import BaseRepository
 _storage_instance: Optional[StorageProvider] = None
 
 
-# --- Repository singletons (lazy-init, models available after reflect_db) ---
+# Repository singletons (lazy-init, models available after reflect_db)
 _file_registry_repo: Optional[BaseRepository] = None
 
 def get_file_registry_repo() -> BaseRepository:
@@ -23,7 +23,7 @@ def get_file_registry_repo() -> BaseRepository:
         _file_registry_repo = BaseRepository(get_file_registry_model())
     return _file_registry_repo
 
-# --- Repository factory for dynamic table routes ---
+# Repository factory for dynamic table routes
 _repo_cache: Dict[str, BaseRepository] = {}
 
 def get_repository(model_class: Any) -> BaseRepository:
@@ -50,13 +50,10 @@ def init_app_services(storage_provider: StorageProvider = None) -> None:
     """
     global _storage_instance
     
-    # Run Migrations before reflecting
     run_migrations()
     
-    # Reflect Database Models
     reflect_db()
     
-    # Initialize Storage
     if _storage_instance is None:
         if storage_provider:
             _storage_instance = storage_provider

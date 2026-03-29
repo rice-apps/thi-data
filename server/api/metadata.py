@@ -29,7 +29,6 @@ def get_metadata_updates_model():
     return get_internal_model_class(METADATA_UPDATES_TABLE)
 
 
-# --- Writes ---
 
 @router.post("/api/metadata_creation", response_model=Dict[str, Any])
 def metadata_creation(
@@ -61,7 +60,6 @@ def metadata_update(
     return model_to_dict(new_item)
 
 
-# --- Reads / Filters ---
 
 @router.get("/api/metadata_filters")
 def metadata_filters_endpoint():

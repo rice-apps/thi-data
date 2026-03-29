@@ -14,7 +14,6 @@ import sys
 import pytest
 from unittest.mock import patch, MagicMock
 
-# Add the 'server' directory to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
@@ -28,9 +27,7 @@ TARGET_TABLE = "test_database"  # Must have integer 'age' column for validation 
 API_URL = "http://localhost:8000"
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
+# Test fixtures
 
 @pytest.fixture(scope="function")
 def setup_target_row():
@@ -67,18 +64,15 @@ def setup_target_row():
         db.close()
 
 
-# ===========================================================================
-# TEST GROUP 1: Resolve (Heal) Endpoint
-# ===========================================================================
+# Resolve (Heal) Endpoint tests
 
 class TestResolveEndpoint:
     """Tests for PATCH /api/{table_name}/{row_id}/resolve."""
 
     def test_resolve_corrupted_row_success(self, setup_target_row):
         """
-        Resolving with a valid integer value should:
-        1. Update the primary record's age
-        2. Return the updated record as a TableRow dict
+        Resolving with a valid integer value should update the primary record's age
+        and return the updated record as a TableRow dict.
         """
         target_id = setup_target_row
 
@@ -149,9 +143,7 @@ class TestResolveEndpoint:
         assert r.json()["age"] == 42
 
 
-# ===========================================================================
-# TEST GROUP 2: Type Validation Unit Tests (no server required)
-# ===========================================================================
+# Type Validation unit tests
 
 class TestTypeValidation:
     """Unit tests for the _validate_and_cast helper function."""
@@ -200,9 +192,7 @@ class TestTypeValidation:
         assert self.validate("name", "hello", String()) == "hello"
 
 
-# ===========================================================================
-# TEST GROUP 3: ETL Sidecar — All rows in clean table
-# ===========================================================================
+# ETL Sidecar tests
 
 class TestETLSidecarBehavior:
     """
@@ -306,9 +296,7 @@ class TestETLSidecarBehavior:
         assert "original_csv_row_id" in corrupted_cols
 
 
-# ===========================================================================
-# TEST GROUP 4: Resolve request body shape (unit tests)
-# ===========================================================================
+# Resolve request body shape tests
 
 class TestResolveRequestBody:
     """The PATCH resolve endpoint expects { corrections: {...} }."""

@@ -13,9 +13,7 @@ from core.deps import get_db, get_model_class, get_internal_model_class
 from api.tables import router
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# Test helpers
 
 def _make_app():
     app = FastAPI()
@@ -30,9 +28,7 @@ def _make_app():
     return app, mock_db
 
 
-# ---------------------------------------------------------------------------
-# GET /api/tables
-# ---------------------------------------------------------------------------
+# GET /api/tables tests
 
 class TestGetAllTables:
 
@@ -100,9 +96,7 @@ class TestGetAllTables:
         assert "corrupted_rows" not in tables
 
 
-# ---------------------------------------------------------------------------
-# GET /api/tables_with_metadata
-# ---------------------------------------------------------------------------
+# GET /api/tables_with_metadata tests
 
 class TestTablesWithMetadata:
 
@@ -134,9 +128,7 @@ class TestTablesWithMetadata:
         mock_get_meta.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# GET /api/schema/{table_name}
-# ---------------------------------------------------------------------------
+# GET /api/schema/{table_name} tests
 
 class TestGetTableSchema:
 
@@ -169,9 +161,7 @@ class TestGetTableSchema:
         assert "age" in columns
 
 
-# ---------------------------------------------------------------------------
-# GET /api/get_size/{table_name}
-# ---------------------------------------------------------------------------
+# GET /api/get_size/{table_name} tests
 
 class TestGetSize:
 
@@ -199,9 +189,7 @@ class TestGetSize:
         assert resp.status_code == 404
 
 
-# ---------------------------------------------------------------------------
-# DELETE /api/tables/{table_name}
-# ---------------------------------------------------------------------------
+# DELETE /api/tables/{table_name} tests
 
 class TestDeleteTable:
 

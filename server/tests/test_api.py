@@ -3,8 +3,6 @@ import os
 import sys
 import pytest
 
-# --- Imports for setup/teardown ---
-# Add the 'server' directory to sys.path so we can import modules
 current_dir = os.path.dirname(os.path.abspath(__file__))
 server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
@@ -24,7 +22,6 @@ API_URL = "http://localhost:8000"
 
 @pytest.fixture(scope="function")
 def setup_item():
-    # --- 0. Load database models ---
     reflect_db() 
     model_class = db_module.Base.classes.get(TABLE)
     
@@ -40,7 +37,7 @@ def setup_item():
 
     created_item = None
     try:
-        # --- 1. SETUP ---
+        # Create the test item
         created_item = BaseRepository(model_class).create(db, new_item_data)
         db.commit()
         db.refresh(created_item)
@@ -49,7 +46,7 @@ def setup_item():
         yield item_id
     
     finally:
-        # --- 2. TEARDOWN: Clean up the database ---
+        # Tear down: Clean up the database
         if created_item:
             try:
                 BaseRepository(model_class).delete(db, created_item.id)
@@ -61,7 +58,7 @@ def setup_item():
 
 @pytest.fixture(scope="function")
 def setup_metadata_creation():
-    # --- 0. Load database models ---
+    # Load database models
     reflect_db()
     model_class = db_module.Base.classes.get(METADATA_CREATION_TABLE)
     if not model_class:
@@ -74,7 +71,7 @@ def setup_metadata_creation():
         }
     created_item = None
     try:
-        # --- 1. SETUP ---
+        # Create metadata creation record
         created_item = BaseRepository(model_class).create(db, new_item_data)
         db.commit()
         db.refresh(created_item)
@@ -83,7 +80,7 @@ def setup_metadata_creation():
         yield item_id
     
     finally:
-        # --- 2. TEARDOWN: Clean up the database ---
+        # Tear down: Clean up the database
         if created_item:
             try:
                 BaseRepository(model_class).delete(db, created_item.id)
@@ -197,7 +194,7 @@ def test_update_item(setup_item):
 
 
 def test_delete_item():
-    # --- 1. Setup: Manually create an item to delete ---
+    # Create an item to delete
     reflect_db()
     model_class = db_module.Base.classes.get(TABLE)
 
@@ -222,7 +219,7 @@ def test_delete_item():
         db.close()
         pytest.fail(f"Test setup for test_delete_item failed: {e}")
     
-    # --- 2. Run the test ---
+    # Run the test
     r = requests.delete(f"{API_URL}/api/{TABLE}/{item_id}")
 
     assert r.status_code == 200

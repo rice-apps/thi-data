@@ -16,7 +16,6 @@ import time
 import pytest
 from unittest.mock import patch, MagicMock
 
-# Add the 'server' directory to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
@@ -26,10 +25,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from fastapi.testclient import TestClient
 
 
-# ---------------------------------------------------------------------------
-# 1. Advisory Lock — refresh_warehouse wraps Base.prepare in the dlock
-# ---------------------------------------------------------------------------
-
+# Advisory Lock tests
 class TestAdvisoryLock:
     """Verify that the /api/refresh endpoint acquires the advisory lock
     before calling Base.prepare and releases it afterward."""
@@ -104,10 +100,7 @@ class TestAdvisoryLock:
         mock_lock.__exit__.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# 2. Model Discovery — get_model_class returns the right class or errors
-# ---------------------------------------------------------------------------
-
+# Model Discovery tests
 class TestModelDiscovery:
     """Test that get_model_class correctly retrieves models and enforces
     access restrictions on hidden tables."""
@@ -169,10 +162,7 @@ class TestModelDiscovery:
         assert "Configuration error" in exc_info.value.detail
 
 
-# ---------------------------------------------------------------------------
-# 3. Race Condition Simulation — concurrent reflection calls are serialized
-# ---------------------------------------------------------------------------
-
+# Race Condition Simulation tests
 class TestRaceCondition:
     """Simulate two threads calling refresh_warehouse concurrently.
     The advisory lock should serialize them so Base.prepare is never
@@ -250,10 +240,7 @@ class TestRaceCondition:
         )
 
 
-# ---------------------------------------------------------------------------
-# 4. Lock Release on Failure — lock is freed even when Base.prepare raises
-# ---------------------------------------------------------------------------
-
+# Lock Release on Failure tests
 class TestLockReleaseOnFailure:
     """If Base.prepare() raises a SQLAlchemyError, the advisory lock must
     still be released so subsequent calls can proceed."""
@@ -298,10 +285,7 @@ class TestLockReleaseOnFailure:
         assert not real_lock.locked(), "Lock was not released after failure"
 
 
-# ---------------------------------------------------------------------------
-# 5. Schema Refresh Consistency — new/changed tables appear after refresh
-# ---------------------------------------------------------------------------
-
+# Schema Refresh Consistency tests
 class TestSchemaRefreshConsistency:
     """After a schema change (e.g., adding a column or table), calling
     refresh should update Base.classes without requiring a restart."""

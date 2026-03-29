@@ -12,7 +12,6 @@ import sys
 import types
 import pytest
 
-# Add the 'server' directory to sys.path so we can import modules
 current_dir = os.path.dirname(os.path.abspath(__file__))
 server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
@@ -35,9 +34,7 @@ sys.modules["services.dlt_pipeline"] = _fake_dlt_pipeline
 from services.etl_processor import _validate_and_split_data as validate_and_split_data
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
+# Test fixtures
 
 @pytest.fixture
 def duckdb_con():
@@ -50,9 +47,7 @@ def duckdb_con():
     con.close()
 
 
-# ---------------------------------------------------------------------------
 # Helper: seed a raw_staging table with test data
-# ---------------------------------------------------------------------------
 
 def seed_raw_table(con, columns: list[str], rows: list[tuple]):
     """
@@ -67,9 +62,7 @@ def seed_raw_table(con, columns: list[str], rows: list[tuple]):
         con.execute(f"INSERT INTO {RAW_DATA_NAME} VALUES ({placeholders})", list(row))
 
 
-# ===========================================================================
-# TEST 1: TRY_CAST Buffer Test — corrupted_rows catches exactly the bad rows
-# ===========================================================================
+# TRY_CAST Buffer tests
 
 class TestTryCastValidation:
     """Test that TRY_CAST-based validation correctly partitions dirty data."""
@@ -247,9 +240,7 @@ class TestTryCastValidation:
         assert corrupted[0][2] == "Validation Failed"
 
 
-# ===========================================================================
-# TEST 2: Memory Resilience — DuckDB memory limit configuration
-# ===========================================================================
+# Memory Resilience tests
 
 class TestMemoryResilience:
     """Test that DuckDB memory limits can be set and are respected."""
@@ -327,9 +318,7 @@ class TestMemoryResilience:
             pass
 
 
-# ===========================================================================
-# TEST 3: All-Blank Row Filtering
-# ===========================================================================
+# All-Blank Row Filtering tests
 
 class TestBlankRowFiltering:
     """Rows where every raw value is NULL or empty are excluded from clean_data."""

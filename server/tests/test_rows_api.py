@@ -13,9 +13,7 @@ from core.deps import get_db, get_model_class
 from api.rows import router
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# Test helpers
 
 def _make_app():
     app = FastAPI()
@@ -49,9 +47,7 @@ def _mock_mapper(columns, pk_columns=None):
     return mapper
 
 
-# ---------------------------------------------------------------------------
-# Get all items
-# ---------------------------------------------------------------------------
+# Get all items tests
 
 class TestGetAllItems:
 
@@ -122,9 +118,7 @@ class TestGetAllItems:
         assert data["data"][0]["_error_context"] is None
 
 
-# ---------------------------------------------------------------------------
-# Get one item
-# ---------------------------------------------------------------------------
+# Get one item tests
 
 class TestGetOneItem:
 
@@ -161,9 +155,7 @@ class TestGetOneItem:
         assert resp.status_code == 404
 
 
-# ---------------------------------------------------------------------------
-# Create item
-# ---------------------------------------------------------------------------
+# Create item tests
 
 class TestCreateItem:
 
@@ -205,9 +197,7 @@ class TestCreateItem:
         assert "Invalid field" in resp.json()["detail"]
 
 
-# ---------------------------------------------------------------------------
-# Update item
-# ---------------------------------------------------------------------------
+# Update item tests
 
 class TestUpdateItem:
 
@@ -329,9 +319,7 @@ class TestUpdateItem:
         mock_db.commit.assert_called()
 
 
-# ---------------------------------------------------------------------------
-# Delete item
-# ---------------------------------------------------------------------------
+# Delete item tests
 
 class TestDeleteItem:
 
@@ -402,9 +390,7 @@ class TestDeleteItem:
         mock_db.commit.assert_called()
 
 
-# ---------------------------------------------------------------------------
-# Match items (search)
-# ---------------------------------------------------------------------------
+# Match items (search) tests
 
 class TestMatchItems:
 
@@ -442,9 +428,7 @@ class TestMatchItems:
         assert resp.status_code == 400
 
 
-# ---------------------------------------------------------------------------
-# log_metadata_update
-# ---------------------------------------------------------------------------
+# log_metadata_update tests
 
 class TestLogMetadataUpdate:
 

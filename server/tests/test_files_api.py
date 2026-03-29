@@ -13,9 +13,7 @@ from core.deps import get_db, get_storage_provider, get_file_registry_repo
 from api.files import router, derive_table_name
 
 
-# ---------------------------------------------------------------------------
-# derive_table_name
-# ---------------------------------------------------------------------------
+# derive_table_name tests
 
 class TestDeriveTableName:
 
@@ -41,9 +39,7 @@ class TestDeriveTableName:
         assert derive_table_name(".hidden") == "t_"
 
 
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
+# Test helpers
 
 def _make_app():
     """Create a FastAPI app with the files router and default overrides."""
@@ -59,9 +55,7 @@ def _make_app():
     return app, mock_db
 
 
-# ---------------------------------------------------------------------------
-# Upload
-# ---------------------------------------------------------------------------
+# Upload tests
 
 class TestUploadFile:
 
@@ -190,9 +184,7 @@ class TestUploadFile:
         assert "try again" in detail.lower()
 
 
-# ---------------------------------------------------------------------------
-# Delete
-# ---------------------------------------------------------------------------
+# Delete tests
 
 class TestDeleteFile:
 
@@ -230,9 +222,7 @@ class TestDeleteFile:
         assert resp.status_code == 404
 
 
-# ---------------------------------------------------------------------------
-# Update file registry
-# ---------------------------------------------------------------------------
+# Update file registry tests
 
 class TestUpdateFileRegistry:
 
@@ -278,9 +268,7 @@ class TestUpdateFileRegistry:
         assert resp.status_code == 404
 
 
-# ---------------------------------------------------------------------------
-# List files
-# ---------------------------------------------------------------------------
+# List files tests
 
 class TestListFiles:
 
@@ -301,9 +289,7 @@ class TestListFiles:
         mock_storage.list_files.assert_called_once_with(prefix="uploads/")
 
 
-# ---------------------------------------------------------------------------
-# Process file
-# ---------------------------------------------------------------------------
+# Process file tests
 
 class TestProcessFile:
 
@@ -348,9 +334,7 @@ class TestProcessFile:
         assert resp.status_code == 404
 
 
-# ---------------------------------------------------------------------------
-# Check duplicate
-# ---------------------------------------------------------------------------
+# Check duplicate tests
 
 class TestCheckDuplicate:
 

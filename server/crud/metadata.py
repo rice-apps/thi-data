@@ -32,7 +32,7 @@ def get_tables_metadata(
     if not table_names:
         return []
 
-    # 1. Bulk fetch creation records for all requested tables
+    # Bulk fetch creation records for all requested tables
     creation_map = {}
     if creation_model:
         try:
@@ -42,7 +42,7 @@ def get_tables_metadata(
         except Exception as e:
             logging.error(f"Metadata creation fetch failed: {e}")
 
-    # 2. Bulk fetch only the *latest* update record per table using Postgres DISTINCT ON
+    # Bulk fetch only the *latest* update record per table using Postgres DISTINCT ON
     updates_map = {}
     if updates_model and creation_map:
         try:
@@ -59,7 +59,7 @@ def get_tables_metadata(
         except Exception as e:
             logging.error(f"Metadata updates fetch failed: {e}")
 
-    # 3. Bulk fetch all table sizes in a single query to eliminate N+1 roundtrips.
+    # Bulk fetch all table sizes in a single query to eliminate N+1 roundtrips.
     # Use to_regclass() which returns NULL for non-existent tables instead of throwing.
     # Try public schema first, then fall back to DLT schema for cross-schema tables.
     size_map = {}
@@ -75,7 +75,7 @@ def get_tables_metadata(
     except Exception as e:
         logging.warning(f"Bulk size fetch failed: {e}")
 
-    # 4. Assemble final metadata list
+    # Assemble final metadata list
     results = []
     for name in table_names:
         info = {

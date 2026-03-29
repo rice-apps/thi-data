@@ -6,7 +6,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.schema_inferencer import infer_from_file
 
-# --- Fixtures ---
 @pytest.fixture
 def mapping_result():
     """Runs the inference function once to be used across multiple tests."""
@@ -20,7 +19,6 @@ def get_field_type(schema: dict, field_name: str) -> str | None:
             return field["type"]
     return None
 
-# --- Tests ---
 
 def test_messy_date_fallback(mapping_result):
     """

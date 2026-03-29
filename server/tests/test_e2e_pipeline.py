@@ -74,7 +74,6 @@ def _upload_and_process(file_path, schema_overrides=None):
     assert r.status_code == 200, f"Schema inference failed: {r.text}"
     columns = r.json()["columns"]
 
-    # Map types and build schema
     schema_map = {}
     clean_schema = {"fields": []}
     for col in columns:
@@ -89,14 +88,12 @@ def _upload_and_process(file_path, schema_overrides=None):
             if field["name"] in schema_overrides:
                 field["type"] = schema_overrides[field["name"]]
 
-    # Confirm schema
     r = requests.patch(
         f"{API_URL}/api/files/{file_id}",
         json={"file_schema": clean_schema, "status": FileStatus.SCHEMA_CONFIRMED},
     )
     assert r.status_code == 200, f"Schema confirm failed: {r.text}"
 
-    # Process
     r = requests.post(
         f"{API_URL}/api/files/{file_id}/process",
         json={"proposed_schema": schema_map},
@@ -131,10 +128,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-# ===========================================================================
-# Full Pipeline E2E
-# ===========================================================================
-
+# Full Pipeline E2E tests
 class TestFullPipelineE2E:
 
     @pytest.fixture(scope="class")
@@ -148,7 +142,7 @@ class TestFullPipelineE2E:
 
         yield file_id, status
 
-        # Cleanup: delete file from registry
+        # Delete file from registry
         try:
             requests.delete(f"{API_URL}/api/files", params={"file_id": file_id})
         except Exception:
@@ -197,10 +191,7 @@ class TestFullPipelineE2E:
         assert any("celery_success" in l or "celery_failed" in l for l in lines)
 
 
-# ===========================================================================
-# Corrupted Data E2E
-# ===========================================================================
-
+# Corrupted Data E2E tests
 class TestCorruptedDataE2E:
 
     @pytest.fixture(scope="class")
@@ -256,10 +247,7 @@ class TestCorruptedDataE2E:
         )
 
 
-# ===========================================================================
-# XLSX Corrupted Data E2E
-# ===========================================================================
-
+# XLSX Corrupted Data E2E tests
 class TestXLSXCorruptedDataE2E:
 
     @pytest.fixture(scope="class")

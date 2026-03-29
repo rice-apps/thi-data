@@ -11,25 +11,19 @@ from unittest.mock import MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-# ---------------------------------------------------------------------------
 # sys.path setup — shared across all test files
-# ---------------------------------------------------------------------------
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 server_dir = os.path.dirname(current_dir)
 if server_dir not in sys.path:
     sys.path.insert(0, server_dir)
 
-# ---------------------------------------------------------------------------
 # Constants
-# ---------------------------------------------------------------------------
 
 API_URL = "http://localhost:8000"
 TEST_CSV_PATH = os.path.join(current_dir, "test_data.csv")
 
-# ---------------------------------------------------------------------------
 # Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture

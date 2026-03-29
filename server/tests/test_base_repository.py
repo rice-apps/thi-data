@@ -11,9 +11,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Date
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 
-# ---------------------------------------------------------------------------
-# Test model + database setup
-# ---------------------------------------------------------------------------
+# Test model and database setup
 
 class DummyModelBase(DeclarativeBase):
     pass
@@ -45,9 +43,7 @@ def repo():
     return BaseRepository(Item)
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
+# Repository methods tests
 
 class TestBaseRepository:
 
