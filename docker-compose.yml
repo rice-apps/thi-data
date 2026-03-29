@@ -15,6 +15,7 @@ services:
     container_name: thi-db
     restart: always
     environment:
+      # [CHANGE IN PRODUCTION] Set strong database credentials
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=postgres
@@ -49,6 +50,7 @@ services:
     volumes:
       - ./server:/app
     environment:
+      # [CHANGE IN PRODUCTION] Must match POSTGRES_USER and POSTGRES_PASSWORD above
       - user=postgres
       - password=password
       - host=db
@@ -75,6 +77,7 @@ services:
     volumes:
       - ./server:/app
     environment:
+      # [CHANGE IN PRODUCTION] Must match POSTGRES_USER and POSTGRES_PASSWORD above
       - user=postgres
       - password=password
       - host=db

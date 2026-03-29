@@ -1,14 +1,6 @@
 """
-Tests for the schema validation API endpoints and DI patterns.
-
-Unit tests use FastAPI TestClient with dependency overrides (no live services).
-Integration tests hit the live API (requires docker compose up).
-
-Test coverage:
-  1. POST /api/validate_schema — schema inference from file
-  2. POST /api/files/{file_id}/process — process with user-confirmed schema
-  3. DI verification — deps are injected, not created internally
-  4. End-to-end: upload → infer → save schema → process
+Tests for schema validation, inference, and file processing workflow.
+Covers inference, splitting data into clean/corrupted tables, and DI verification.
 """
 
 import os
@@ -368,11 +360,7 @@ class TestValidateSchemaEndpoint:
 # Integration Tests: Full flow tests
 
 class TestSchemaValidationIntegration:
-    """Integration tests hitting the live API.
-    
-    These require the Docker stack to be running 
-    (docker compose up backend db seaweedfs rabbitmq).
-    """
+    """Integration tests hitting the live API."""
 
     @pytest.fixture
     def uploaded_file(self):
@@ -418,20 +406,11 @@ class TestSchemaValidationIntegration:
             assert "name" in col
             assert "type" in col
 
-    def test_full_flow_upload_infer_confirm_process(self, uploaded_file):
-        """
-        Full integration test of the schema validation pipeline:
-        1. Upload CSV (done by fixture)
-        2. Infer schema via POST /api/validate_schema
-        3. Save schema via PATCH /api/files/{file_id}
-        4. Queue processing via POST /api/files/{file_id}/process
-        """
-        file_id = uploaded_file
-
-        # 2. Infer schema
+    def test_full_pipeline_flow(self, uploaded_file):
+        # Infer schema
         infer_resp = requests.post(
             f"{API_URL}/api/validate_schema",
-            params={"file_id": file_id}
+            params={"file_id": uploaded_file}
         )
         assert infer_resp.status_code == 200, f"Inference failed: {infer_resp.text}"
         columns = infer_resp.json()["columns"]
@@ -452,7 +431,7 @@ class TestSchemaValidationIntegration:
             schema_map[col["name"]] = duckdb_type
             clean_schema["fields"].append({"name": col["name"], "type": duckdb_type})
 
-        # 3. Save schema via PATCH /api/files/{file_id}
+        # Save schema via PATCH /api/files/{file_id}
         save_resp = requests.patch(
             f"{API_URL}/api/files/{file_id}",
             json={
@@ -462,7 +441,7 @@ class TestSchemaValidationIntegration:
         )
         assert save_resp.status_code == 200, f"Schema save failed: {save_resp.text}"
 
-        # 4. Queue processing via POST /api/files/{file_id}/process
+        # Queue processing via POST /api/files/{file_id}/process
         process_resp = requests.post(
             f"{API_URL}/api/files/{file_id}/process",
             json={"proposed_schema": schema_map}
