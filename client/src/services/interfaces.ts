@@ -60,4 +60,8 @@ export interface IDataService {
     fileId: string,
     proposedSchema: Record<string, string>
   ): Promise<{ file_id: string; status: string }>;
+
+  checkDuplicate(
+    tableName: string
+  ): Promise<{ table_name: string; exists: boolean }>;
 }

@@ -67,11 +67,17 @@ def _validate_and_split_data(con, schema_map):
         WHERE {where_clause}
     """)
     select_clause = ", ".join(columns_sql)
+
+    # Exclude rows where every raw value is NULL or empty (truly blank rows)
+    all_blank_parts = [f'("{col}" IS NULL OR TRIM("{col}") = \'\')' for col in schema_map]
+    all_blank_condition = " AND ".join(all_blank_parts)
+
     logger.info("Creating clean data table")
     con.execute(f"""
         CREATE TABLE {CLEAN_DATA_NAME} AS
         SELECT rowid AS original_csv_row_id, {select_clause}
         FROM {RAW_DATA_NAME}
+        WHERE NOT ({all_blank_condition})
     """)
     error_count = con.execute(f"SELECT COUNT(*) FROM {CORRUPTED_ROWS_NAME}").fetchone()[0]
     logger.info(f"Data validation completed - found {error_count} corrupted rows")

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useServices } from '@/services';
 import { FILE_UPLOAD } from '@/constants';
@@ -8,9 +8,23 @@ import { Button } from '@/components/Button';
 
 type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
+function deriveTableName(filename: string): string {
+  const stem = filename.includes('.')
+    ? filename.substring(0, filename.lastIndexOf('.'))
+    : filename;
+  let name = stem
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+  if (!name || /^\d/.test(name)) {
+    name = `t_${name}`;
+  }
+  return name;
+}
+
 export default function DataUploadPage() {
   const router = useRouter();
-  const { authService } = useServices();
+  const { authService, dataService } = useServices();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
@@ -18,6 +32,8 @@ export default function DataUploadPage() {
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [tableName, setTableName] = useState('');
+  const [duplicateWarning, setDuplicateWarning] = useState('');
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -62,9 +78,34 @@ export default function DataUploadPage() {
     }
 
     setFile(selectedFile);
+    setTableName(deriveTableName(selectedFile.name));
+    setDuplicateWarning('');
     setErrorMessage('');
     setUploadStatus('idle');
   };
+
+  // Check for duplicate table name when it changes
+  useEffect(() => {
+    if (!tableName) {
+      setDuplicateWarning('');
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const result = await dataService.checkDuplicate(tableName);
+        setDuplicateWarning(
+          result.exists
+            ? `A table named "${tableName}" already exists and will be overwritten.`
+            : ''
+        );
+      } catch {
+        // Non-blocking: don't prevent upload if check fails
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [tableName, dataService]);
 
   const handleUpload = async () => {
     if (!file) {
@@ -129,7 +170,10 @@ export default function DataUploadPage() {
         }
       );
 
-      xhr.open('POST', `${baseUrl}/api/files/upload`);
+      const uploadQuery = tableName
+        ? `?table_name=${encodeURIComponent(tableName)}`
+        : '';
+      xhr.open('POST', `${baseUrl}/api/files/upload${uploadQuery}`);
       if (userName) {
         xhr.setRequestHeader('X-User-Name', userName);
       }
@@ -155,6 +199,8 @@ export default function DataUploadPage() {
     setUploadStatus('idle');
     setErrorMessage('');
     setUploadProgress(0);
+    setTableName('');
+    setDuplicateWarning('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -264,6 +310,33 @@ export default function DataUploadPage() {
                   </svg>
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Table Name */}
+          {file && (
+            <div className="mt-6">
+              <label
+                htmlFor="table-name"
+                className="block text-sm font-medium text-slate-700 mb-1"
+              >
+                Table name
+              </label>
+              <input
+                id="table-name"
+                value={tableName}
+                onChange={(e) =>
+                  setTableName(
+                    e.target.value.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase()
+                  )
+                }
+                className="w-full border-[2px] border-slate-500 rounded px-4 py-2 text-slate-900"
+              />
+              {duplicateWarning && (
+                <div className="mt-2 p-3 border border-amber-400 bg-amber-50 rounded text-sm text-amber-800">
+                  {duplicateWarning}
+                </div>
+              )}
             </div>
           )}
 

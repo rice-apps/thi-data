@@ -10,7 +10,35 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from core.deps import get_db, get_storage_provider, get_file_registry_repo
-from api.files import router
+from api.files import router, derive_table_name
+
+
+# ---------------------------------------------------------------------------
+# derive_table_name
+# ---------------------------------------------------------------------------
+
+class TestDeriveTableName:
+
+    def test_simple_csv(self):
+        assert derive_table_name("patients.csv") == "patients"
+
+    def test_xlsx_extension(self):
+        assert derive_table_name("patients.xlsx") == "patients"
+
+    def test_special_characters(self):
+        assert derive_table_name("OWLS Data (2025).xlsx") == "owls_data__2025"
+
+    def test_numeric_prefix(self):
+        assert derive_table_name("123data.csv") == "t_123data"
+
+    def test_hyphen_and_spaces(self):
+        assert derive_table_name("patient-data report.csv") == "patient_data_report"
+
+    def test_no_extension(self):
+        assert derive_table_name("myfile") == "myfile"
+
+    def test_empty_stem(self):
+        assert derive_table_name(".hidden") == "t_"
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +150,26 @@ class TestUploadFile:
         )
         assert resp.status_code == 500
         assert "try again" in resp.json()["detail"].lower()
+
+    def test_upload_with_custom_table_name(self):
+        app, mock_db = _make_app()
+        mock_storage = MagicMock()
+        mock_storage.upload_file.return_value = True
+        mock_repo = MagicMock()
+        mock_repo.create.return_value = MagicMock()
+
+        app.dependency_overrides[get_storage_provider] = lambda: mock_storage
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        client = TestClient(app)
+        resp = client.post(
+            "/api/files/upload?table_name=custom_name",
+            files={"file": ("test.csv", b"a,b\n1,2", "text/csv")},
+        )
+        assert resp.status_code == 200
+        create_kwargs = mock_repo.create.call_args
+        obj_in = create_kwargs[1]["obj_in"] if "obj_in" in create_kwargs[1] else create_kwargs[0][1]
+        assert obj_in["target_table_name"] == "custom_name"
 
     def test_upload_storage_raises(self):
         app, mock_db = _make_app()
@@ -298,3 +346,66 @@ class TestProcessFile:
             json={"proposed_schema": {"age": "INTEGER"}},
         )
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Check duplicate
+# ---------------------------------------------------------------------------
+
+class TestCheckDuplicate:
+
+    def test_no_duplicate(self):
+        app, mock_db = _make_app()
+        mock_repo = MagicMock()
+        mock_repo.get_by_field.return_value = []
+
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        client = TestClient(app)
+        resp = client.get("/api/files/check-duplicate", params={"table_name": "patients"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["exists"] is False
+        assert data["table_name"] == "patients"
+
+    def test_active_duplicate_exists(self):
+        app, mock_db = _make_app()
+        mock_repo = MagicMock()
+        mock_record = MagicMock()
+        mock_record.status = "SUCCESS"
+        mock_repo.get_by_field.return_value = [mock_record]
+
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        client = TestClient(app)
+        resp = client.get("/api/files/check-duplicate", params={"table_name": "patients"})
+        assert resp.status_code == 200
+        assert resp.json()["exists"] is True
+
+    def test_deleted_records_ignored(self):
+        app, mock_db = _make_app()
+        mock_repo = MagicMock()
+        mock_record = MagicMock()
+        mock_record.status = "DELETED"
+        mock_repo.get_by_field.return_value = [mock_record]
+
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        client = TestClient(app)
+        resp = client.get("/api/files/check-duplicate", params={"table_name": "patients"})
+        assert resp.status_code == 200
+        assert resp.json()["exists"] is False
+
+    def test_failed_records_ignored(self):
+        app, mock_db = _make_app()
+        mock_repo = MagicMock()
+        mock_record = MagicMock()
+        mock_record.status = "FAILED"
+        mock_repo.get_by_field.return_value = [mock_record]
+
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        client = TestClient(app)
+        resp = client.get("/api/files/check-duplicate", params={"table_name": "patients"})
+        assert resp.status_code == 200
+        assert resp.json()["exists"] is False

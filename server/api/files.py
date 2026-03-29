@@ -18,14 +18,37 @@ router = APIRouter(tags=["files"])
 logger = logging.getLogger(__name__)
 
 
+def derive_table_name(filename: str) -> str:
+    """Derive a SQL-safe table name from a filename (without extension)."""
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    table_name = re.sub(r"[^a-zA-Z0-9_]", "_", stem).strip("_").lower()
+    if not table_name or table_name[0].isdigit():
+        table_name = f"t_{table_name}"
+    return table_name
+
+
 class FileUpdate(BaseModel):
     status: Optional[str] = None
     object_key: Optional[str] = None
     file_schema: Optional[dict] = None
 
+@router.get("/api/files/check-duplicate")
+def check_duplicate(
+    table_name: str,
+    db: Session = Depends(get_db),
+    repo: BaseRepository = Depends(get_file_registry_repo),
+):
+    """Check if a table name is already in use by an active file."""
+    existing = repo.get_by_field(db=db, field_name="target_table_name", value=table_name)
+    terminal_statuses = {FileStatus.DELETED, FileStatus.FAILED}
+    active = [r for r in existing if r.status not in terminal_statuses]
+    return {"table_name": table_name, "exists": len(active) > 0}
+
+
 @router.post("/api/files/upload")
 async def upload_file(
     file: UploadFile = File(...),
+    table_name: Optional[str] = None,
     db: Session = Depends(get_db),
     storage_provider: StorageProvider = Depends(get_storage_provider),
     repo: BaseRepository = Depends(get_file_registry_repo),
@@ -35,11 +58,7 @@ async def upload_file(
     content = await file.read()
     logger.info("Starting upload: %s  file_id=%s", file.filename, file_id)
 
-    # Derive a SQL-safe table name from the filename (without extension)
-    stem = file.filename.rsplit(".", 1)[0] if "." in file.filename else file.filename
-    table_name = re.sub(r"[^a-zA-Z0-9_]", "_", stem).strip("_").lower()
-    if not table_name or table_name[0].isdigit():
-        table_name = f"t_{table_name}"
+    table_name = table_name or derive_table_name(file.filename)
 
     try:
         # Upload via the configured StorageProvider (S3/SeaweedFS or FakeS3)

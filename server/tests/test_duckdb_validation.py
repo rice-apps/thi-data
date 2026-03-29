@@ -325,3 +325,85 @@ class TestMemoryResilience:
             shutil.rmtree(tmp_dir)
         except Exception:
             pass
+
+
+# ===========================================================================
+# TEST 3: All-Blank Row Filtering
+# ===========================================================================
+
+class TestBlankRowFiltering:
+    """Rows where every raw value is NULL or empty are excluded from clean_data."""
+
+    def test_all_null_row_excluded(self, duckdb_con):
+        columns = ["name", "age"]
+        rows = [
+            ("Alice", "30"),
+            (None, None),
+            ("Charlie", "25"),
+        ]
+        seed_raw_table(duckdb_con, columns, rows)
+
+        schema_map = {"name": "VARCHAR", "age": "INTEGER"}
+        validate_and_split_data(duckdb_con, schema_map)
+
+        clean_count = duckdb_con.execute(
+            f"SELECT COUNT(*) FROM {CLEAN_DATA_NAME}"
+        ).fetchone()[0]
+        assert clean_count == 2
+
+    def test_all_empty_string_row_excluded(self, duckdb_con):
+        columns = ["name", "age"]
+        rows = [
+            ("Alice", "30"),
+            ("", ""),
+            ("  ", "  "),
+            ("Charlie", "25"),
+        ]
+        seed_raw_table(duckdb_con, columns, rows)
+
+        schema_map = {"name": "VARCHAR", "age": "INTEGER"}
+        validate_and_split_data(duckdb_con, schema_map)
+
+        clean_count = duckdb_con.execute(
+            f"SELECT COUNT(*) FROM {CLEAN_DATA_NAME}"
+        ).fetchone()[0]
+        assert clean_count == 2
+
+    def test_partial_null_row_kept(self, duckdb_con):
+        """A row with at least one non-null value should be kept."""
+        columns = ["name", "age"]
+        rows = [
+            ("Alice", "30"),
+            ("Bob", None),
+            (None, "25"),
+            (None, None),
+        ]
+        seed_raw_table(duckdb_con, columns, rows)
+
+        schema_map = {"name": "VARCHAR", "age": "INTEGER"}
+        validate_and_split_data(duckdb_con, schema_map)
+
+        clean_count = duckdb_con.execute(
+            f"SELECT COUNT(*) FROM {CLEAN_DATA_NAME}"
+        ).fetchone()[0]
+        assert clean_count == 3
+
+    def test_failed_cast_row_not_excluded(self, duckdb_con):
+        """Rows with real data that fails casting should NOT be filtered out."""
+        columns = ["code"]
+        rows = [
+            ("abc",),
+            ("def",),
+            (None,),
+        ]
+        seed_raw_table(duckdb_con, columns, rows)
+
+        schema_map = {"code": "INTEGER"}
+        validate_and_split_data(duckdb_con, schema_map)
+
+        clean_count = duckdb_con.execute(
+            f"SELECT COUNT(*) FROM {CLEAN_DATA_NAME}"
+        ).fetchone()[0]
+        # "abc" and "def" have non-null raw values, so they stay (cast to NULL via TRY_CAST)
+        # Only the NULL row is excluded
+        assert clean_count == 2

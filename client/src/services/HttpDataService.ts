@@ -164,4 +164,15 @@ export class HttpDataService implements IDataService {
     const headers = await this.getAuthHeaders();
     await this.httpClient.delete(`${tableName}/${id}`, { headers });
   }
+
+  async checkDuplicate(
+    tableName: string
+  ): Promise<{ table_name: string; exists: boolean }> {
+    const headers = await this.getAuthHeaders();
+    const query = new URLSearchParams({ table_name: tableName });
+    return this.httpClient.get<{ table_name: string; exists: boolean }>(
+      `files/check-duplicate?${query}`,
+      { headers }
+    );
+  }
 }
