@@ -14,15 +14,12 @@ function LoginForm({ message }: { message?: string }) {
 
   return (
     <div className="w-full max-w-md">
-      {/* Logo & Title */}
-      <div className="text-center mb-8">
-        <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-[#1c66bb] to-[#0d4a8f] flex items-center justify-center shadow-lg shadow-blue-500/20 mb-4">
-          <span className="text-white font-bold text-2xl">T</span>
-        </div>
-        <h1 className="text-2xl font-semibold text-slate-800">
-          Texas Hearing Institute
-        </h1>
-        <p className="text-slate-500 mt-1">Data Warehouse Portal</p>
+      {/* Title */}
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold text-slate-900">Welcome Back!</h1>
+        <p className="text-slate-500 mt-2 text-lg">
+          Sign in to access your dashboard.
+        </p>
       </div>
 
       {/* Success Message from Signup */}
@@ -33,34 +30,39 @@ function LoginForm({ message }: { message?: string }) {
       )}
 
       {/* Login Form */}
-      <form
-        action={formAction}
-        className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-200 p-8 space-y-5"
-      >
+      <form action={formAction} className="space-y-5">
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">
+          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
             Email
           </label>
           <input
             type="email"
             name="email"
-            placeholder="you@texashearing.org"
+            placeholder="Email"
             required
-            className="w-full px-4 py-3 text-slate-700 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1c66bb]/30 focus:border-[#1c66bb] focus:bg-white transition-all duration-200"
+            className="w-full px-4 py-3 text-slate-700 bg-white border border-slate-300 rounded-full focus:outline-none focus:ring-2 focus:ring-[#1c3a6b]/30 focus:border-[#1c3a6b] transition-all duration-200"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">
+          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
             Password
           </label>
           <input
             type="password"
             name="password"
-            placeholder="••••••••"
+            placeholder="Password"
             required
-            className="w-full px-4 py-3 text-slate-700 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1c66bb]/30 focus:border-[#1c66bb] focus:bg-white transition-all duration-200"
+            className="w-full px-4 py-3 text-slate-700 bg-white border border-slate-300 rounded-full focus:outline-none focus:ring-2 focus:ring-[#1c3a6b]/30 focus:border-[#1c3a6b] transition-all duration-200"
           />
+          <div className="text-right mt-1.5">
+            <a
+              href="/forgot-password"
+              className="text-sm text-[#1c3a6b] hover:underline font-medium"
+            >
+              Forgot Password?
+            </a>
+          </div>
         </div>
 
         {state?.error && (
@@ -72,7 +74,7 @@ function LoginForm({ message }: { message?: string }) {
         <button
           type="submit"
           disabled={isPending}
-          className="w-full py-3 px-4 bg-gradient-to-r from-[#1c66bb] to-[#0d4a8f] text-white font-medium rounded-xl hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full py-3 px-4 bg-[#1c3a6b] text-white font-medium rounded-full hover:bg-[#162e55] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isPending ? (
             <span className="flex items-center justify-center gap-2">
@@ -80,15 +82,15 @@ function LoginForm({ message }: { message?: string }) {
               Signing in...
             </span>
           ) : (
-            'Sign In'
+            'Sign in'
           )}
         </button>
 
-        <p className="text-center text-sm text-slate-500">
+        <p className="text-center text-sm text-slate-500 mt-2">
           Don&apos;t have an account?{' '}
           <a
             href="/signup"
-            className="text-[#1c66bb] hover:underline font-medium"
+            className="text-[#1c3a6b] hover:underline font-medium"
           >
             Create one
           </a>
@@ -107,9 +109,11 @@ export default function LoginPage(props: {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-50 flex items-center justify-center p-4">
-      <Suspense fallback={<div>Loading...</div>}>
-        <LoginForm message={message} />
-      </Suspense>
+      <div className="bg-white rounded-3xl shadow-lg shadow-slate-200/60 p-10 w-full max-w-lg">
+        <Suspense fallback={<div>Loading...</div>}>
+          <LoginForm message={message} />
+        </Suspense>
+      </div>
     </div>
   );
 }
