@@ -433,7 +433,7 @@ class TestSchemaValidationIntegration:
 
         # Save schema via PATCH /api/files/{file_id}
         save_resp = requests.patch(
-            f"{API_URL}/api/files/{file_id}",
+            f"{API_URL}/api/files/{uploaded_file}",
             json={
                 "file_schema": clean_schema,
                 "status": FileStatus.SCHEMA_CONFIRMED,
@@ -443,12 +443,12 @@ class TestSchemaValidationIntegration:
 
         # Queue processing via POST /api/files/{file_id}/process
         process_resp = requests.post(
-            f"{API_URL}/api/files/{file_id}/process",
+            f"{API_URL}/api/files/{uploaded_file}/process",
             json={"proposed_schema": schema_map}
         )
         assert process_resp.status_code == 200, f"Process failed: {process_resp.text}"
         process_data = process_resp.json()
-        assert process_data["file_id"] == file_id
+        assert process_data["file_id"] == uploaded_file
         assert process_data["status"] == "PROCESSING"
 
 
