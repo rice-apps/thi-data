@@ -71,7 +71,7 @@ def update_file_status(file_id: str, status: Union[FileStatus, str], error_messa
             update_data=update_data
         )
 
-@app.task(bind=True, acks_late=True, retry_backoff=True, max_retries=3)
+@app.task(bind=True, acks_late=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
 def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
     """
     Celery task to process a patient data file.
@@ -88,7 +88,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
                 value=file_id
             )
             if not records:
-                raise ETLError(f"File not found in registry.")
+                raise ValueError("File not found in registry.")
             object_key = records[0].object_key
             target_table_name = records[0].target_table_name
             uploaded_by = records[0].uploaded_by or "unknown"
@@ -98,7 +98,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
         file_path = storage_provider.get_file_path(object_key)
 
         if not file_path:
-            raise ETLError("The uploaded file could not be found. Please try uploading again.")
+            raise FileNotFoundError(f"Could not resolve file path for object_key: {object_key}")
 
         # Run ETL logic
         error_count = run_etl(str(file_path), proposed_schema, target_table_name=target_table_name)
@@ -163,7 +163,7 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
         return {"file_id": file_id, "status": FileStatus.FAILED, "error": str(e)}
 
     except Exception as e:
-        # Potentially transient (network, DB connection) — retry with backoff.
+        # Potentially transient (network, DB connection) — autoretry will retry.
         logger.error(f"Task failed for file_id {file_id}: {e}", exc_info=True)
         update_file_status(file_id, FileStatus.FAILED, error_message=str(e))
         try:
@@ -171,8 +171,8 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
                 "type": "celery_failed",
                 "file_id": file_id,
                 "message": "Processing failed",
-                "error": "An unexpected error occurred while processing the file. Retrying...",
+                "error": str(e),
             })
         except Exception as notify_err:
             logging.warning(f"Failed to send failure event for {file_id}: {notify_err}")
-        raise self.retry(exc=e)
+        raise
