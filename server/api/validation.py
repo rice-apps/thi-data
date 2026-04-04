@@ -42,7 +42,11 @@ def validate_schema(
         logger.info(f"Inferring schema from file: {file_path}")
         result = infer_from_file(str(file_path))
         fields = result["schema"]["fields"]
-        columns = [{"name": f["name"], "type": f["type"]} for f in fields]
+        columns = [
+            {"name": f["name"], "type": f["type"]}
+            for f in fields
+            if not (f["name"].startswith("field") and f["name"][5:].isdigit())
+        ]
         logger.info(f"Schema inferred successfully with {len(columns)} columns")
 
         repo.update_by_field(
