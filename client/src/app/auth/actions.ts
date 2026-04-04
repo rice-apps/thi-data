@@ -45,7 +45,17 @@ export async function signUpAction(formData: FormData) {
   });
 
   if (error) {
-    return { error: error.message };
+    const isPasswordError = /password/i.test(error.message);
+    const isEmailError = /email/i.test(error.message);
+    return {
+      error: error.message,
+      values: {
+        firstName,
+        lastName,
+        email: isEmailError ? '' : email,
+        password: isPasswordError ? '' : password,
+      },
+    };
   }
 
   redirect('/login?message=Check your email for verification');
