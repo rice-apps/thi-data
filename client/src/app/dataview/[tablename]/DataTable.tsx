@@ -385,7 +385,7 @@ export default function DataTable({
                     const isCorrupted = row._is_corrupted === true;
                     return (
                       <tr
-                        key={(row.id as React.Key) ?? rowIndex}
+                        key={rowIndex}
                         className={`transition-colors group ${
                           isCorrupted
                             ? 'bg-red-50 border-l-4 border-red-400 hover:bg-red-100'

@@ -9,6 +9,15 @@ import React, {
 } from 'react';
 import { Toast } from './Toast';
 
+function toUserFacingError(raw: string): string {
+  if (raw.includes('Referenced column') && raw.includes('not found in FROM clause')) {
+    const match = raw.match(/Referenced column "([^"]+)"/);
+    const col = match ? ` "${match[1]}"` : '';
+    return `Column${col} not found in the file. Please go back and re-verify your column selection.`;
+  }
+  return 'Processing failed. Please try uploading again.';
+}
+
 type ProcessingContextValue = {
   startProcessing: (fileId: string) => void;
   lastSuccessTimestamp: number | null;
@@ -63,7 +72,7 @@ export function ProcessingProvider({
       try {
         const payload = JSON.parse(event.data || '{}') as { error?: string };
         if (payload.error) {
-          message = `Processing failed: ${payload.error}`;
+          message = toUserFacingError(payload.error);
         }
       } catch {
         // use default message
