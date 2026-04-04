@@ -9,6 +9,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class ETLError(Exception):
+    """Non-retryable ETL error with a user-friendly message."""
+    pass
+
+
 def process_file(file_path: str, proposed_schema: dict, target_table_name: str = None):
     """
     Core ETL function: read file → validate with DuckDB TRY_CAST → split clean/corrupted → load to Postgres.
@@ -20,6 +25,10 @@ def process_file(file_path: str, proposed_schema: dict, target_table_name: str =
     """
     logger.info(f"Starting file processing task for: {file_path}")
     logger.debug(f"Proposed schema: {proposed_schema}")
+
+    if not proposed_schema:
+        raise ETLError("No columns were provided in the schema. Please define at least one column.")
+
     con = duckdb.connect(database=':memory:')
 
     # Set temp directory for overflow
@@ -29,16 +38,56 @@ def process_file(file_path: str, proposed_schema: dict, target_table_name: str =
 
     try:
         logger.info(f"Creating raw staging table from file: {file_path}")
-        create_raw_table(con, file_path, RAW_DATA_NAME)
+        try:
+            create_raw_table(con, file_path, RAW_DATA_NAME)
+        except Exception as e:
+            logger.error(f"Failed to read file {file_path}: {e}", exc_info=True)
+            raise ETLError(
+                f"Could not read the uploaded file: {e}"
+            ) from e
+        _normalize_column_names(con, RAW_DATA_NAME)
         logger.info("Raw staging table created successfully")
+        _check_columns_exist(con, RAW_DATA_NAME, proposed_schema)
         error_count = _validate_and_split_data(con, proposed_schema)
         dlt_pipeline = DLTPipeline()
         dlt_pipeline.load_to_postgres(con, target_table_name=target_table_name)
         logger.info("File processing task completed successfully")
         return error_count
+    except ETLError:
+        raise
+    except duckdb.Error as e:
+        logger.error(f"DuckDB error during processing: {e}", exc_info=True)
+        raise ETLError(
+            f"Data processing failed due to a database error. Please check your file and schema."
+        ) from e
     finally:
         con.close()
         logger.debug("DuckDB connection closed")
+
+
+def _normalize_column_names(con, table_name):
+    """Strip BOM, whitespace, and other invisible characters from column names."""
+    cols = [row[0] for row in con.execute(f"DESCRIBE {table_name}").fetchall()]
+    renames = []
+    for col in cols:
+        cleaned = col.strip().lstrip("\ufeff").strip()
+        if cleaned != col:
+            renames.append((col, cleaned))
+    for old, new in renames:
+        logger.info(f"Normalizing column name: {repr(old)} -> {repr(new)}")
+        con.execute(f'ALTER TABLE {table_name} RENAME COLUMN "{old}" TO "{new}"')
+
+
+def _check_columns_exist(con, table_name, schema_map):
+    """Validate that all proposed schema columns exist in the raw table."""
+    actual_cols = {row[0] for row in con.execute(f"DESCRIBE {table_name}").fetchall()}
+    missing = [col for col in schema_map if col not in actual_cols]
+    if missing:
+        raise ETLError(
+            f"Column mismatch: schema references {missing} "
+            f"but the file only has columns {sorted(actual_cols)}. "
+            f"This usually means the file headers don't match the confirmed schema."
+        )
 
 
 def _validate_and_split_data(con, schema_map):

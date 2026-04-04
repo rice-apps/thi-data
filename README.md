@@ -19,6 +19,7 @@ For clients and operators deploying the full system, use the following command t
 make deploy
 ```
 
+
 This command automatically initializes and starts the following services:
 -   **Postgres 16**: The central relational database and primary data warehouse.
 -   **RabbitMQ**: The message broker for asynchronous task processing.

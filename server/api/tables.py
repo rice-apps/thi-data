@@ -63,11 +63,15 @@ def get_table_schema(
     model_class: Any = Depends(get_model_class)
 ) -> dict:
     """
-    Get the column names for a table (excluding 'id').
+    Get the column names for a table.
     """
     logger.info(f"Getting schema for table: {table_name}")
     mapper = inspect(model_class)
-    columns = [c.key for c in mapper.column_attrs if c.key not in ("id", "original_csv_row_id")]
+    columns = [
+        c.key
+        for c in mapper.column_attrs
+        if c.key not in ("original_csv_row_id", "id")
+    ]
     logger.info(f"Retrieved {len(columns)} columns for table {table_name}")
     return {"columns": columns}
 
