@@ -52,7 +52,7 @@ def _load_csv(
 ) -> None:
     con.execute(f"""
         CREATE TABLE {table_name} AS
-        SELECT * FROM read_csv('{file_path}', all_varchar=True, auto_detect=True)
+        SELECT * FROM read_csv('{file_path}', all_varchar=True, auto_detect=True, delim=',', null_padding=True)
     """)
 
 
