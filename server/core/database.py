@@ -27,7 +27,10 @@ def _rebuild_class_map():
     new_map = {}
     for name, cls in Base.classes.items():
         schema = cls.__table__.schema or "public"
-        new_map[(schema, name)] = cls
+        tablename = cls.__table__.name
+        new_map[(schema, tablename)] = cls
+        if name != tablename:
+            new_map[(schema, name)] = cls
     global _schema_class_map
     _schema_class_map = new_map
 

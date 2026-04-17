@@ -47,6 +47,19 @@ def _mock_mapper(columns, pk_columns=None):
     return mapper
 
 
+def _mock_table_columns(model_mock, names):
+    """Table.columns for merge_corruption_pairs (name/key aligned with model_to_dict)."""
+    cols = []
+    for n in names:
+        c = MagicMock()
+        c.name = n
+        c.key = n
+        cols.append(c)
+    table = MagicMock()
+    table.columns = cols
+    model_mock.__table__ = table
+
+
 # Get all items tests
 
 class TestGetAllItems:
@@ -58,7 +71,7 @@ class TestGetAllItems:
 
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.get_class_strict", return_value=None), \
+        with patch("api.rows.fetch_merged_page_or_none", return_value=None), \
              patch("api.rows.get_repository") as mock_get_repo:
 
             mock_repo = MagicMock()
@@ -82,6 +95,7 @@ class TestGetAllItems:
         app, mock_db = _make_app()
         mock_model = MagicMock()
         mock_model.original_csv_row_id = MagicMock()
+        _mock_table_columns(mock_model, ["id", "name", "original_csv_row_id"])
 
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
@@ -96,10 +110,10 @@ class TestGetAllItems:
         mock_stmt.offset.return_value = mock_stmt
         mock_stmt.limit.return_value = mock_stmt
 
-        with patch("api.rows.get_class_strict", return_value=mock_corrupted_model), \
-             patch("api.rows.inspect", return_value=mapper), \
-             patch("api.rows.select", return_value=mock_stmt), \
-             patch("api.rows.model_to_dict") as mock_to_dict:
+        with patch("services.row_corruption.resolve_sidecar_class", return_value=mock_corrupted_model), \
+             patch("services.row_corruption.inspect", return_value=mapper), \
+             patch("services.row_corruption.select", return_value=mock_stmt), \
+             patch("services.row_corruption.model_to_dict") as mock_to_dict:
 
             # Mock the db.execute result
             mock_main_row = MagicMock()
@@ -121,6 +135,7 @@ class TestGetAllItems:
         app, mock_db = _make_app()
         mock_model = MagicMock()
         mock_model.original_csv_row_id = MagicMock()
+        _mock_table_columns(mock_model, ["id", "name", "original_csv_row_id"])
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
         mock_corrupted_model = MagicMock()
         mapper = _mock_mapper(["id", "name", "original_csv_row_id"])
@@ -143,10 +158,10 @@ class TestGetAllItems:
                 return {"original_csv_row_id": 10, "name": "bad2", "error_reason": "e2"}
             return {}
 
-        with patch("api.rows.get_class_strict", return_value=mock_corrupted_model), \
-             patch("api.rows.inspect", return_value=mapper), \
-             patch("api.rows.select", return_value=mock_stmt), \
-             patch("api.rows.model_to_dict", side_effect=to_dict):
+        with patch("services.row_corruption.resolve_sidecar_class", return_value=mock_corrupted_model), \
+             patch("services.row_corruption.inspect", return_value=mapper), \
+             patch("services.row_corruption.select", return_value=mock_stmt), \
+             patch("services.row_corruption.model_to_dict", side_effect=to_dict):
             mock_db.execute.return_value.all.return_value = [
                 (mock_main, cr1),
                 (mock_main, cr2),
@@ -172,7 +187,10 @@ class TestGetOneItem:
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
         with patch("api.rows.get_repository") as mock_get_repo, \
-             patch("api.rows.model_to_dict", return_value={"id": 1, "name": "Alice"}):
+             patch(
+                 "api.rows.serialize_main_rows",
+                 return_value=[{"id": 1, "name": "Alice"}],
+             ):
             mock_repo = MagicMock()
             mock_repo.get_by_id.return_value = MagicMock()
             mock_get_repo.return_value = mock_repo
@@ -254,7 +272,10 @@ class TestUpdateItem:
 
         with patch("api.rows.inspect", return_value=mapper), \
              patch("api.rows.get_repository") as mock_get_repo, \
-             patch("api.rows.model_to_dict", return_value={"id": 1, "name": "Updated"}), \
+             patch(
+                 "api.rows.serialize_main_rows",
+                 return_value=[{"id": 1, "name": "Updated"}],
+             ), \
              patch("api.rows.log_metadata_update"):
             mock_repo = MagicMock()
             mock_repo.get_by_id.return_value = MagicMock()
@@ -336,9 +357,14 @@ class TestUpdateItem:
         with patch("api.rows.is_dlt_table", return_value=True), \
              patch("api.rows.inspect", return_value=mapper), \
              patch("api.rows.get_repository") as mock_get_repo, \
-             patch("api.rows.model_to_dict") as mock_to_dict, \
+             patch(
+                 "api.rows.serialize_main_rows",
+                 return_value=[
+                     {"id": 1, "name": "Updated", "original_csv_row_id": "row-123"}
+                 ],
+             ), \
              patch("api.rows.log_metadata_update"), \
-             patch("api.rows.get_class_strict", return_value=mock_corrupted_model):
+             patch("services.row_corruption.resolve_sidecar_class", return_value=mock_corrupted_model):
              
             mock_repo = MagicMock()
             mock_item = MagicMock()
@@ -350,7 +376,6 @@ class TestUpdateItem:
             mock_repo.update.return_value = updated_mock_item
             
             mock_get_repo.return_value = mock_repo
-            mock_to_dict.return_value = {"id": 1, "name": "Updated", "original_csv_row_id": "row-123"}
 
             client = TestClient(app)
             resp = client.put("/api/test_table/1", json={"name": "Updated"})
@@ -414,7 +439,7 @@ class TestDeleteItem:
         with patch("api.rows.is_dlt_table", return_value=True), \
              patch("api.rows.get_repository") as mock_get_repo, \
              patch("api.rows.log_metadata_update"), \
-             patch("api.rows.get_class_strict", return_value=mock_corrupted_model):
+             patch("services.row_corruption.resolve_sidecar_class", return_value=mock_corrupted_model):
              
             mock_repo = MagicMock()
             mock_item = MagicMock()
@@ -444,7 +469,8 @@ class TestMatchItems:
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
         with patch("api.rows.get_repository") as mock_get_repo, \
-             patch("api.rows.model_to_dict", return_value={"id": 1, "name": "Alice"}):
+             patch("services.row_corruption.resolve_sidecar_class", return_value=None), \
+             patch("services.row_corruption.model_to_dict", return_value={"id": 1, "name": "Alice"}):
             mock_repo = MagicMock()
             mock_repo.filter_text.return_value = ([MagicMock()], 1)
             mock_get_repo.return_value = mock_repo

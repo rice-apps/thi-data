@@ -1,62 +1,22 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 from core.deps import get_db, get_model_class, get_internal_model_class, get_repository
-from core.database import get_class_strict, is_dlt_table
-from core.config import settings
+from core.database import is_dlt_table
 from crud.base import model_to_dict
 from datetime import datetime
 import logging
 
+from services.row_corruption import (
+    RowCorruptionFacade,
+    fetch_merged_page_or_none,
+    serialize_main_rows,
+)
+
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
-
-
-def _build_corruption_join_rows(
-    results: List[Tuple[Any, Any]],
-    model_class: Any,
-    main_columns: set,
-) -> List[Dict[str, Any]]:
-    pk_key = inspect(model_class).primary_key[0].key
-    aggregated: Dict[Any, Dict[str, Any]] = {}
-    order: List[Any] = []
-
-    for main_row, corrupted_row in results:
-        pk_val = getattr(main_row, pk_key)
-        if pk_val not in aggregated:
-            order.append(pk_val)
-            aggregated[pk_val] = {"main_row": main_row, "corrupted_rows": []}
-        if corrupted_row is not None:
-            aggregated[pk_val]["corrupted_rows"].append(corrupted_row)
-
-    data: List[Dict[str, Any]] = []
-    for pk_val in order:
-        bundle = aggregated[pk_val]
-        main_row = bundle["main_row"]
-        item_dict = model_to_dict(main_row)
-        error_context: Dict[str, Any] = {}
-        for corrupted_row in bundle["corrupted_rows"]:
-            corrupted_dict = model_to_dict(corrupted_row)
-            for col in main_columns:
-                if col in ("id", "original_csv_row_id"):
-                    continue
-                if item_dict.get(col) is None and corrupted_dict.get(col) is not None:
-                    if col not in error_context:
-                        error_context[col] = {
-                            "raw_value": str(corrupted_dict[col]),
-                            "error": getattr(corrupted_row, "error_reason", None)
-                            or "Validation failed",
-                        }
-        if error_context:
-            item_dict["_is_corrupted"] = True
-            item_dict["_error_context"] = error_context
-        else:
-            item_dict["_is_corrupted"] = False
-            item_dict["_error_context"] = None
-        data.append(item_dict)
-    return data
 
 
 def log_metadata_update(db: Session, table_name: str, user_name: str = "system"):
@@ -117,48 +77,26 @@ def get_all_items(
 ) -> Dict[str, Any]:
     logger.info(f"Getting all items from table: {table_name} (skip={skip}, limit={limit})")
 
-    # Try per-table corrupted sidecar first, fall back to legacy name
-    CorruptedRows = (
-        get_class_strict(f"{table_name}__corrupted", schema=settings.DLT_DATASET)
-        or get_class_strict("corrupted_rows", schema=settings.DLT_DATASET)
-    )
-
-    if CorruptedRows and hasattr(model_class, 'original_csv_row_id') and hasattr(CorruptedRows, 'original_csv_row_id'):
-        logger.debug(f"Using corrupted rows join for table: {table_name}")
-        mapper = inspect(model_class)
-        pk_order = list(mapper.primary_key)
-        stmt = select(model_class, CorruptedRows).outerjoin(
-            CorruptedRows,
-            model_class.original_csv_row_id == CorruptedRows.original_csv_row_id,
-        )
-        if pk_order:
-            stmt = stmt.order_by(*(c.asc() for c in pk_order))
-        stmt = stmt.offset(skip).limit(limit)
-
-        total = db.query(model_class).count()
-        results = db.execute(stmt).all()
-
-        main_columns = {c.key for c in mapper.column_attrs}
-        data = _build_corruption_join_rows(results, model_class, main_columns)
-
+    merged = fetch_merged_page_or_none(db, model_class, table_name, skip, limit)
+    if merged is not None:
+        data, total = merged
         logger.info(f"Retrieved {len(data)} items from {table_name}, total: {total}")
         return {
             "data": data,
             "total": total,
             "page": (skip // limit) + 1,
-            "limit": limit
+            "limit": limit,
         }
 
-    else:
-        repo = get_repository(model_class)
-        items, total = repo.get_all(db, skip=skip, limit=limit)
-        logger.info(f"Retrieved {len(items)} items from {table_name}, total: {total}")
-        data = [model_to_dict(item) for item in items]
-        return {
-            "data": data,
-            "total": total,
-            "page": (skip // limit) + 1,
-            "limit": limit
+    repo = get_repository(model_class)
+    items, total = repo.get_all(db, skip=skip, limit=limit)
+    logger.info(f"Retrieved {len(items)} items from {table_name}, total: {total}")
+    data = [model_to_dict(item) for item in items]
+    return {
+        "data": data,
+        "total": total,
+        "page": (skip // limit) + 1,
+        "limit": limit,
     }
 
 @router.post("/api/{table_name}")
@@ -208,8 +146,9 @@ def match_items(
         repo = get_repository(model_class)
         results, total = repo.filter_text(db, column, match, skip=skip, limit=limit)
         logger.info(f"Found {total} matching items, returning {len(results)} results")
+        data = serialize_main_rows(db, model_class, table_name, results)
         return {
-            "data": [model_to_dict(item) for item in results],
+            "data": data,
             "total": total,
             "page": (skip // limit) + 1,
             "limit": limit
@@ -220,9 +159,10 @@ def match_items(
 
 @router.get("/api/{table_name}/{item_id}")
 def get_one_item(
+    table_name: str,
     item_id: str,
     model_class: Any = Depends(get_model_class),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> dict:
     logger.info(f"Getting item {item_id} from table")
     repo = get_repository(model_class)
@@ -231,7 +171,8 @@ def get_one_item(
         logger.warning(f"Item {item_id} not found")
         raise HTTPException(status_code=404, detail="Item not found")
     logger.info(f"Item {item_id} retrieved successfully")
-    return model_to_dict(item)
+    merged = serialize_main_rows(db, model_class, table_name, [item])
+    return merged[0]
 
 @router.put("/api/{table_name}/{item_id}")
 def update_item(
@@ -266,20 +207,14 @@ def update_item(
         log_metadata_update(db, table_name, user_name=x_user_name or "system")
         
         # Cleanup sidecar error record if it exists
-        if is_dlt_table(model_class) and hasattr(new_item, 'original_csv_row_id'):
-            CorruptedRows = (
-                get_class_strict(f"{table_name}__corrupted", schema=settings.DLT_DATASET)
-                or get_class_strict("corrupted_rows", schema=settings.DLT_DATASET)
+        if is_dlt_table(model_class) and hasattr(new_item, "original_csv_row_id"):
+            RowCorruptionFacade(db, model_class, table_name).delete_sidecar_for_original_id(
+                new_item.original_csv_row_id,
+                log_context=f"update {item_id}:",
             )
-            if CorruptedRows:
-                try:
-                    db.query(CorruptedRows).filter(CorruptedRows.original_csv_row_id == new_item.original_csv_row_id).delete()
-                    db.commit()
-                except Exception as cleanup_err:
-                    logger.warning(f"Failed to cleanup corrupted_rows for {item_id}: {cleanup_err}")
-                
+
         logger.info(f"Item {item_id} updated successfully in table {table_name}")
-        return model_to_dict(new_item)
+        return serialize_main_rows(db, model_class, table_name, [new_item])[0]
     except Exception as e:
         logger.error(f"Error updating item {item_id} in table {table_name}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail="Could not update the row. Please check your input values.")
@@ -311,17 +246,11 @@ def delete_item(
     
     # Cleanup sidecar error record if it exists
     if is_dlt and row_id_to_cleanup is not None:
-        CorruptedRows = (
-            get_class_strict(f"{table_name}__corrupted", schema=settings.DLT_DATASET)
-            or get_class_strict("corrupted_rows", schema=settings.DLT_DATASET)
+        RowCorruptionFacade(db, model_class, table_name).delete_sidecar_for_original_id(
+            row_id_to_cleanup,
+            log_context=f"delete {item_id}:",
         )
-        if CorruptedRows:
-            try:
-                db.query(CorruptedRows).filter(CorruptedRows.original_csv_row_id == row_id_to_cleanup).delete()
-                db.commit()
-            except Exception as cleanup_err:
-                logger.warning(f"Failed to cleanup corrupted_rows after delete for {item_id}: {cleanup_err}")
-                
+
     log_metadata_update(db, table_name, user_name=x_user_name or "system")
     logger.info(f"Item {item_id} deleted successfully from table {table_name}")
     return {"message": "Item deleted successfully"}

@@ -55,6 +55,19 @@ function payloadForColumns(columns: string[], formData: TableRow): TableRow {
   return payload;
 }
 
+/** Main row cleared bad values to null/empty; align with server merge_corruption_pairs. */
+function isMissingForCorruptionCell(val: unknown): boolean {
+  if (val == null) return true;
+  if (typeof val === 'string' && val.trim() === '') return true;
+  return false;
+}
+
+function rowHasCorruptionHighlight(row: TableRow): boolean {
+  if (row._is_corrupted === true) return true;
+  const ctx = row._error_context;
+  return !!(ctx && Object.keys(ctx).length > 0);
+}
+
 export default function DataTable({
   tablename,
   initialData,
@@ -339,7 +352,7 @@ export default function DataTable({
 
   const renderCell = (row: TableRow, col: string) => {
     const cellError = row._error_context?.[col];
-    const isCellCorrupted = row[col] == null && !!cellError;
+    const isCellCorrupted = isMissingForCorruptionCell(row[col]) && !!cellError;
 
     if (isCellCorrupted) {
       return (
@@ -421,7 +434,7 @@ export default function DataTable({
                   </tr>
                 ) : (
                   data.map((row, rowIndex) => {
-                    const isCorrupted = row._is_corrupted === true;
+                    const isCorrupted = rowHasCorruptionHighlight(row);
                     const rk = rowMutationKey(row);
                     const rowKey =
                       rk !== undefined ? String(rk) : `row-${rowIndex}`;
@@ -430,18 +443,22 @@ export default function DataTable({
                         key={rowKey}
                         className={`transition-colors group ${
                           isCorrupted
-                            ? 'bg-red-50 border-l-4 border-red-400 hover:bg-red-100'
+                            ? 'bg-red-50 hover:bg-red-100'
                             : 'hover:bg-slate-50'
                         }`}
                       >
-                        {columns.map((col) => {
+                        {columns.map((col, colIndex) => {
                           const cellError = row._error_context?.[col];
                           const isCellCorrupted =
-                            row[col] == null && !!cellError;
+                            isMissingForCorruptionCell(row[col]) && !!cellError;
                           return (
                             <td
                               key={col}
                               className={`px-6 py-4 text-sm whitespace-nowrap ${
+                                colIndex === 0 && isCorrupted
+                                  ? 'border-l-4 border-l-red-400'
+                                  : ''
+                              } ${
                                 isCellCorrupted
                                   ? 'text-red-600'
                                   : row[col] != null
