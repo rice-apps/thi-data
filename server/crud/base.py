@@ -33,6 +33,14 @@ class BaseRepository(Generic[ModelType]):
         pk_cols = mapper.primary_key
         self._pk_attr = pk_cols[0].key if len(pk_cols) == 1 else None
 
+    def _order_by_primary_key(self, query):
+        mapper = sa_inspect(self.model)
+        if not mapper.primary_key:
+            return query
+        for pk in mapper.primary_key:
+            query = query.order_by(pk.asc())
+        return query
+
     def get_by_id(self, db: Session, id: Any) -> Optional[ModelType]:
         pk_column = getattr(self.model, self._pk_attr)
         return db.query(self.model).filter(pk_column == id).first()
@@ -41,7 +49,8 @@ class BaseRepository(Generic[ModelType]):
         self, db: Session, *, skip: int = 0, limit: int = 100
     ) -> Tuple[List[ModelType], int]:
         total = db.query(self.model).count()
-        items = db.query(self.model).offset(skip).limit(limit).all()
+        q = self._order_by_primary_key(db.query(self.model))
+        items = q.offset(skip).limit(limit).all()
         return items, total
 
     def get_by_field(self, db: Session, field_name: str, value: Any) -> List[ModelType]:
@@ -133,5 +142,6 @@ class BaseRepository(Generic[ModelType]):
             cast(column_attr, String).ilike(f"%{match}%")
         )
         total = query.count()
+        query = self._order_by_primary_key(query)
         items = query.offset(skip).limit(limit).all()
         return items, total

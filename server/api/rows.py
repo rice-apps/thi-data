@@ -125,20 +125,19 @@ def get_all_items(
 
     if CorruptedRows and hasattr(model_class, 'original_csv_row_id') and hasattr(CorruptedRows, 'original_csv_row_id'):
         logger.debug(f"Using corrupted rows join for table: {table_name}")
-        stmt = (
-            select(model_class, CorruptedRows)
-            .outerjoin(
-                CorruptedRows, 
-                model_class.original_csv_row_id == CorruptedRows.original_csv_row_id
-            )
-            .offset(skip)
-            .limit(limit)
+        mapper = inspect(model_class)
+        pk_order = list(mapper.primary_key)
+        stmt = select(model_class, CorruptedRows).outerjoin(
+            CorruptedRows,
+            model_class.original_csv_row_id == CorruptedRows.original_csv_row_id,
         )
+        if pk_order:
+            stmt = stmt.order_by(*(c.asc() for c in pk_order))
+        stmt = stmt.offset(skip).limit(limit)
 
         total = db.query(model_class).count()
         results = db.execute(stmt).all()
 
-        mapper = inspect(model_class)
         main_columns = {c.key for c in mapper.column_attrs}
         data = _build_corruption_join_rows(results, model_class, main_columns)
 
