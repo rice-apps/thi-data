@@ -544,8 +544,8 @@ class TestErrorSanitization:
         mock_mapper.column_attrs = [mock_col]
         mock_mapper.primary_key = []
 
-        with patch("api.rows.inspect", return_value=mock_mapper):
-            with patch("api.rows.get_repository") as mock_get_repo:
+        with patch("services.dynamic_row_validation.inspect", return_value=mock_mapper):
+            with patch("services.dynamic_rows_service.get_repository") as mock_get_repo:
                 mock_repo = MagicMock()
                 mock_repo.create.side_effect = Exception("UNIQUE constraint failed: patients.name")
                 mock_get_repo.return_value = mock_repo
@@ -575,7 +575,7 @@ class TestErrorSanitization:
 
         mock_model = MagicMock()
 
-        with patch("api.rows.get_repository") as mock_get_repo:
+        with patch("services.dynamic_rows_service.get_repository") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.filter_text.side_effect = Exception("column 'xyz' does not exist")
             mock_get_repo.return_value = mock_repo
@@ -612,8 +612,8 @@ class TestErrorSanitization:
         mock_mapper.column_attrs = [mock_col]
         mock_mapper.primary_key = []
 
-        with patch("api.rows.inspect", return_value=mock_mapper):
-            with patch("api.rows.get_repository") as mock_get_repo:
+        with patch("services.dynamic_row_validation.inspect", return_value=mock_mapper):
+            with patch("services.dynamic_rows_service.get_repository") as mock_get_repo:
                 mock_repo = MagicMock()
                 mock_item = MagicMock()
                 mock_repo.get_by_id.return_value = mock_item

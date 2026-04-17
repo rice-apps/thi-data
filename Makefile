@@ -15,7 +15,7 @@ DC := cd $(ROOT) && $(DOCKER_COMPOSE) -f $(ROOT)/docker-compose.yml
 help:
 	@echo "thi-data — one-command workflows"
 	@echo ""
-	@echo "  make dev           Full Docker stack (API, worker, DB, queue, S3) + Next.js dev server"
+	@echo "  make dev           Docker infra + API on host port (see API_PUBLISH_PORT) + Next dev (proxies /api)"
 	@echo "  make dev-local     DB/RabbitMQ/SeaweedFS in Docker; FastAPI + Next.js on host (hot reload)"
 	@echo "  make up            Same services as dev, all logs in this terminal (foreground)"
 	@echo "  make up-detach     Full stack in the background"
@@ -76,8 +76,14 @@ ps:
 	$(DC) ps
 
 # Bring DB up first so wait-db / migrate always succeed; stack applies migrations again on API boot (idempotent).
+# Load repo-root .env (if present) so API_PUBLISH_PORT matches next.config proxy target.
 dev: up-detach wait-db migrate
-	cd $(ROOT)/client && (test -d node_modules || npm install) && npm run dev
+	@set -a; \
+	[ -f $(ROOT)/.env ] && . $(ROOT)/.env; \
+	set +a; \
+	cd $(ROOT)/client && (test -d node_modules || npm install) && \
+	NEXT_DEV_PROXY_API_ORIGIN="$${NEXT_DEV_PROXY_API_ORIGIN:-http://127.0.0.1:$${API_PUBLISH_PORT:-8000}}" \
+	npm run dev
 
 infra-local:
 	$(DC) up -d --build db rabbitmq seaweedfs

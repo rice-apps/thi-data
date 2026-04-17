@@ -49,6 +49,10 @@ services:
     container_name: thi-backend
     expose:
       - "${API_PORT:-8000}"
+    # Publish API to the host so `make dev` + Next.js on localhost can reach it (proxy in next.config).
+    # Override API_PUBLISH_HOST / API_PUBLISH_PORT for bind address and host port.
+    ports:
+      - "${API_PUBLISH_HOST:-127.0.0.1}:${API_PUBLISH_PORT:-8000}:${API_PORT:-8000}"
     volumes:
       - ./server:/app
     environment:

@@ -42,6 +42,12 @@ function resolveDataServiceBaseUrl(explicit?: string): string {
     if (internal) {
       return internal;
     }
+    // Relative NEXT_PUBLIC_API_URL: Node fetch needs an absolute URL (make dev / local SSR).
+    const proxyOrigin = (
+      process.env.NEXT_DEV_PROXY_API_ORIGIN || 'http://127.0.0.1:8000'
+    ).replace(/\/$/, '');
+    const path = publicBase.startsWith('/') ? publicBase : `/${publicBase}`;
+    return `${proxyOrigin}${path}`;
   }
   return publicBase;
 }
