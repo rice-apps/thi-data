@@ -19,6 +19,42 @@ type DataTableProps = {
   columns: string[];
 };
 
+function formValueToPayload(raw: unknown): string | number {
+  const trimmed = String(raw ?? '').trim();
+  if (
+    trimmed !== '' &&
+    !isNaN(Number(trimmed)) &&
+    trimmed === Number(trimmed).toString()
+  ) {
+    return Number(trimmed);
+  }
+  return trimmed;
+}
+
+const PAYLOAD_SKIP_COLUMNS = new Set(['id', 'original_csv_row_id']);
+
+function rowMutationKey(row: TableRow): string | number | undefined {
+  if (
+    row.original_csv_row_id !== undefined &&
+    row.original_csv_row_id !== null
+  ) {
+    return row.original_csv_row_id as string | number;
+  }
+  if (row.id !== undefined && row.id !== null) {
+    return row.id as string | number;
+  }
+  return undefined;
+}
+
+function payloadForColumns(columns: string[], formData: TableRow): TableRow {
+  const payload: TableRow = {};
+  for (const col of columns) {
+    if (PAYLOAD_SKIP_COLUMNS.has(col)) continue;
+    payload[col] = formValueToPayload(formData[col]);
+  }
+  return payload;
+}
+
 export default function DataTable({
   tablename,
   initialData,
@@ -209,14 +245,7 @@ export default function DataTable({
 
     setSubmitting(true);
     try {
-      const payload: TableRow = {};
-      Object.entries(formData).forEach(([key, value]) => {
-        const trimmed = String(value).trim();
-        payload[key] =
-          !isNaN(Number(trimmed)) && trimmed === Number(trimmed).toString()
-            ? Number(trimmed)
-            : trimmed;
-      });
+      const payload = payloadForColumns(columns, formData);
 
       await dataService.createRow(tablename, payload);
       await refreshData();
@@ -231,15 +260,15 @@ export default function DataTable({
 
   const handleEditSubmit = async () => {
     if (!modalState.row) return;
+    const rowId = rowMutationKey(modalState.row);
+    if (rowId === undefined) {
+      showError('Cannot update row: missing row key.');
+      return;
+    }
     setSubmitting(true);
     try {
-      const payload = { ...formData };
-      delete payload.id;
-      await dataService.updateRow(
-        tablename,
-        modalState.row.id as string,
-        payload
-      );
+      const payload = payloadForColumns(columns, formData);
+      await dataService.updateRow(tablename, rowId, payload);
       await refreshData();
       closeModal();
       showSuccess('Row updated successfully!');
@@ -252,9 +281,14 @@ export default function DataTable({
 
   const handleDeleteConfirm = async () => {
     if (!modalState.row) return;
+    const rowId = rowMutationKey(modalState.row);
+    if (rowId === undefined) {
+      showError('Cannot delete row: missing row key.');
+      return;
+    }
     setSubmitting(true);
     try {
-      await dataService.deleteRow(tablename, modalState.row.id as string);
+      await dataService.deleteRow(tablename, rowId);
       await refreshData();
       closeModal();
       showSuccess('Row deleted successfully!');
@@ -267,16 +301,21 @@ export default function DataTable({
 
   const handleResolveSubmit = async () => {
     if (!modalState.row || !modalState.field) return;
+    const rowId = rowMutationKey(modalState.row);
+    if (rowId === undefined) {
+      showError('Cannot resolve: missing row key.');
+      return;
+    }
     setSubmitting(true);
     try {
-      await dataService.updateRow(tablename, modalState.row.id as string, {
+      await dataService.updateRow(tablename, rowId, {
         [modalState.field]: resolveValue,
       });
 
-      // Optimistic UI update
+      const targetKey = rowId;
       setData((prev) =>
         prev.map((r) => {
-          if (r.id !== modalState.row!.id) return r;
+          if (rowMutationKey(r) !== targetKey) return r;
           const updatedContext = { ...r._error_context };
           delete updatedContext[modalState.field!];
           const stillCorrupted = Object.keys(updatedContext).length > 0;
@@ -383,9 +422,12 @@ export default function DataTable({
                 ) : (
                   data.map((row, rowIndex) => {
                     const isCorrupted = row._is_corrupted === true;
+                    const rk = rowMutationKey(row);
+                    const rowKey =
+                      rk !== undefined ? String(rk) : `row-${rowIndex}`;
                     return (
                       <tr
-                        key={rowIndex}
+                        key={rowKey}
                         className={`transition-colors group ${
                           isCorrupted
                             ? 'bg-red-50 border-l-4 border-red-400 hover:bg-red-100'
@@ -412,7 +454,7 @@ export default function DataTable({
                           );
                         })}
                         <td className="px-6 py-4 text-right">
-                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex justify-end gap-2">
                             <ActionButton
                               icon="edit"
                               onClick={() => handleEdit(row)}
@@ -616,10 +658,10 @@ function ActionButton({
   title: string;
   variant?: 'default' | 'danger';
 }) {
-  const hoverClass =
+  const surfaceClass =
     variant === 'danger'
-      ? 'hover:text-red-600 hover:bg-red-50'
-      : `hover:text-[${COLORS.PRIMARY}] hover:bg-blue-50`;
+      ? 'text-red-700 border-red-200 bg-white hover:bg-red-50'
+      : `text-slate-800 border-slate-300 bg-white hover:bg-slate-50`;
 
   const iconPath =
     icon === 'edit'
@@ -628,9 +670,11 @@ function ActionButton({
 
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`p-2 text-slate-500 ${hoverClass} rounded-lg transition-colors`}
+      className={`p-2 rounded-lg border shadow-sm transition-colors ${surfaceClass}`}
       title={title}
+      aria-label={title}
     >
       <svg
         className="w-4 h-4"

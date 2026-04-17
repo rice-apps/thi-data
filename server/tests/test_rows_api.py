@@ -117,6 +117,50 @@ class TestGetAllItems:
         assert data["data"][0]["_is_corrupted"] is False
         assert data["data"][0]["_error_context"] is None
 
+    def test_join_dedupes_multiple_sidecars_per_row(self):
+        app, mock_db = _make_app()
+        mock_model = MagicMock()
+        mock_model.original_csv_row_id = MagicMock()
+        app.dependency_overrides[get_model_class] = lambda table_name: mock_model
+        mock_corrupted_model = MagicMock()
+        mapper = _mock_mapper(["id", "name", "original_csv_row_id"])
+        mock_stmt = MagicMock()
+        mock_stmt.outerjoin.return_value = mock_stmt
+        mock_stmt.offset.return_value = mock_stmt
+        mock_stmt.limit.return_value = mock_stmt
+
+        mock_main = MagicMock()
+        mock_main.id = 1
+        cr1 = MagicMock()
+        cr2 = MagicMock()
+
+        def to_dict(obj):
+            if obj is mock_main:
+                return {"id": 1, "name": None, "original_csv_row_id": 10}
+            if obj is cr1:
+                return {"original_csv_row_id": 10, "name": "bad1", "error_reason": "e1"}
+            if obj is cr2:
+                return {"original_csv_row_id": 10, "name": "bad2", "error_reason": "e2"}
+            return {}
+
+        with patch("api.rows.get_class_strict", return_value=mock_corrupted_model), \
+             patch("api.rows.inspect", return_value=mapper), \
+             patch("api.rows.select", return_value=mock_stmt), \
+             patch("api.rows.model_to_dict", side_effect=to_dict):
+            mock_db.execute.return_value.all.return_value = [
+                (mock_main, cr1),
+                (mock_main, cr2),
+            ]
+            mock_db.query.return_value.count.return_value = 1
+
+            client = TestClient(app)
+            resp = client.get("/api/test_table")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["data"]) == 1
+        assert body["data"][0]["id"] == 1
+
 
 # Get one item tests
 

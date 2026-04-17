@@ -1,5 +1,3 @@
-import { COLORS } from '@/constants';
-
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
@@ -15,7 +13,8 @@ type ButtonProps = {
 };
 
 const variantStyles: Record<ButtonVariant, string> = {
-  primary: `bg-gradient-to-r from-[${COLORS.PRIMARY}] to-[${COLORS.PRIMARY_DARK}] text-white hover:shadow-lg hover:shadow-blue-500/25`,
+  primary:
+    'bg-[#1c66bb] text-white border border-[#0d4a8f] hover:bg-[#0d4a8f] shadow-sm',
   secondary:
     'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50',
   danger: 'bg-red-600 text-white hover:bg-red-700',

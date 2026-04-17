@@ -7,6 +7,7 @@ export type CellError = {
 
 export type TableRow = Record<string, TableCellValue> & {
   id?: number | string;
+  original_csv_row_id?: number | string;
   _is_corrupted?: boolean;
   _error_context?: Record<string, CellError>;
 };

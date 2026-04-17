@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
@@ -12,6 +12,52 @@ import logging
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
+
+
+def _build_corruption_join_rows(
+    results: List[Tuple[Any, Any]],
+    model_class: Any,
+    main_columns: set,
+) -> List[Dict[str, Any]]:
+    pk_key = inspect(model_class).primary_key[0].key
+    aggregated: Dict[Any, Dict[str, Any]] = {}
+    order: List[Any] = []
+
+    for main_row, corrupted_row in results:
+        pk_val = getattr(main_row, pk_key)
+        if pk_val not in aggregated:
+            order.append(pk_val)
+            aggregated[pk_val] = {"main_row": main_row, "corrupted_rows": []}
+        if corrupted_row is not None:
+            aggregated[pk_val]["corrupted_rows"].append(corrupted_row)
+
+    data: List[Dict[str, Any]] = []
+    for pk_val in order:
+        bundle = aggregated[pk_val]
+        main_row = bundle["main_row"]
+        item_dict = model_to_dict(main_row)
+        error_context: Dict[str, Any] = {}
+        for corrupted_row in bundle["corrupted_rows"]:
+            corrupted_dict = model_to_dict(corrupted_row)
+            for col in main_columns:
+                if col in ("id", "original_csv_row_id"):
+                    continue
+                if item_dict.get(col) is None and corrupted_dict.get(col) is not None:
+                    if col not in error_context:
+                        error_context[col] = {
+                            "raw_value": str(corrupted_dict[col]),
+                            "error": getattr(corrupted_row, "error_reason", None)
+                            or "Validation failed",
+                        }
+        if error_context:
+            item_dict["_is_corrupted"] = True
+            item_dict["_error_context"] = error_context
+        else:
+            item_dict["_is_corrupted"] = False
+            item_dict["_error_context"] = None
+        data.append(item_dict)
+    return data
+
 
 def log_metadata_update(db: Session, table_name: str, user_name: str = "system"):
     """
@@ -92,36 +138,9 @@ def get_all_items(
         total = db.query(model_class).count()
         results = db.execute(stmt).all()
 
-        # Get the column names from the main model for COALESCE logic
         mapper = inspect(model_class)
         main_columns = {c.key for c in mapper.column_attrs}
-
-        data = []
-        for main_row, corrupted_row in results:
-            item_dict = model_to_dict(main_row)
-            item_dict.pop("original_csv_row_id", None)
-
-            if corrupted_row:
-                corrupted_dict = model_to_dict(corrupted_row)
-                error_context: Dict[str, Any] = {}
-
-                for col in main_columns:
-                    if col in ('id', 'original_csv_row_id'):
-                        continue
-                    # COALESCE: if main value is NULL and sidecar has the raw text
-                    if item_dict.get(col) is None and corrupted_dict.get(col) is not None:
-                        error_context[col] = {
-                            "raw_value": str(corrupted_dict[col]),
-                            "error": getattr(corrupted_row, "error_reason", None) or "Validation failed"
-                        }
-
-                item_dict['_is_corrupted'] = len(error_context) > 0
-                item_dict['_error_context'] = error_context if error_context else None
-            else:
-                item_dict['_is_corrupted'] = False
-                item_dict['_error_context'] = None
-
-            data.append(item_dict)
+        data = _build_corruption_join_rows(results, model_class, main_columns)
 
         logger.info(f"Retrieved {len(data)} items from {table_name}, total: {total}")
         return {
@@ -136,8 +155,6 @@ def get_all_items(
         items, total = repo.get_all(db, skip=skip, limit=limit)
         logger.info(f"Retrieved {len(items)} items from {table_name}, total: {total}")
         data = [model_to_dict(item) for item in items]
-        for d in data:
-            d.pop("original_csv_row_id", None)
         return {
             "data": data,
             "total": total,
@@ -154,7 +171,8 @@ def create_item(
     db: Session = Depends(get_db)
 ) -> dict:
     logger.info(f"Creating item in table: {table_name}, user: {x_user_name or 'system'}")
-    # Dynamic Validation
+    item_data = dict(item_data)
+    item_data.pop("id", None)
     mapper = inspect(model_class)
     valid_keys = {c.key for c in mapper.column_attrs}
     

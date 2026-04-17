@@ -177,14 +177,16 @@ export class HttpDataService implements IDataService {
     data: Partial<TableRow>
   ): Promise<TableRow> {
     const headers = await this.getAuthHeaders();
-    return this.httpClient.put<TableRow>(`${tableName}/${id}`, data, {
+    const path = `${encodeURIComponent(String(tableName))}/${encodeURIComponent(String(id))}`;
+    return this.httpClient.put<TableRow>(path, data, {
       headers,
     });
   }
 
   async deleteRow(tableName: string, id: string | number): Promise<void> {
     const headers = await this.getAuthHeaders();
-    await this.httpClient.delete(`${tableName}/${id}`, { headers });
+    const path = `${encodeURIComponent(String(tableName))}/${encodeURIComponent(String(id))}`;
+    await this.httpClient.delete(path, { headers });
   }
 
   async checkDuplicate(
