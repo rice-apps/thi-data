@@ -22,7 +22,7 @@ help:
 	@echo "  make migrate       Apply idempotent SQL only (safe to repeat; uses one-off backend container)"
 	@echo "  make install       client npm install + server venv + pip (for dev-local)"
 	@echo "  make test          ensures Docker stack is up, waits for API, runs pytest"
-	@echo "  make deploy        production-style: full stack in background + DB/API ready (no Next.js)"
+	@echo "  make deploy        production-style: full stack in background (API + Frontend)"
 	@echo "  make down          Stop and remove containers"
 	@echo ""
 	@echo "Override compose if needed: make dev DOCKER_COMPOSE='docker-compose'"
@@ -65,10 +65,9 @@ up:
 up-detach start:
 	$(DC) up -d --build
 
-# Same images as setup.md “On-Prem Deployment”: Postgres, RabbitMQ, SeaweedFS, API, Celery.
-# Serve the Next.js app separately (e.g. Vercel or `npm run start`); nothing to docker-compose for the client yet.
+# Full background stack: Postgres, RabbitMQ, SeaweedFS, API, Celery, Frontend.
 deploy: up-detach wait-db wait-api
-	@echo "Stack is up — API http://localhost:8000/docs | RabbitMQ http://localhost:15672 (guest/guest)"
+	@echo "Stack is up — Website: http://localhost | API Specs: http://localhost/api/docs"
 
 down stop:
 	$(DC) down

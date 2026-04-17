@@ -11,7 +11,7 @@ ENV PYTHONUNBUFFERED=1
 
 # Install system dependencies (needed for some Python packages)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libpq-dev build-essential \
+    && apt-get install -y --no-install-recommends gcc libpq-dev build-essential cmake \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

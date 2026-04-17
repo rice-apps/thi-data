@@ -29,7 +29,10 @@ def get_all_tables():
 
 
 def _is_visible(table_name: str) -> bool:
+    from core.constants import HIDDEN_TABLE_PATTERNS
     if table_name in UNLISTED_TABLES:
+        return False
+    if any(p in table_name for p in HIDDEN_TABLE_PATTERNS):
         return False
     return not any(table_name.endswith(s) for s in HIDDEN_TABLE_SUFFIXES)
 

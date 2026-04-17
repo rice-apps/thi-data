@@ -10,7 +10,10 @@ import React, {
 import { Toast } from './Toast';
 
 function toUserFacingError(raw: string): string {
-  if (raw.includes('Referenced column') && raw.includes('not found in FROM clause')) {
+  if (
+    raw.includes('Referenced column') &&
+    raw.includes('not found in FROM clause')
+  ) {
     const match = raw.match(/Referenced column "([^"]+)"/);
     const col = match ? ` "${match[1]}"` : '';
     return `Column${col} not found in the file. Please go back and re-verify your column selection.`;
@@ -42,15 +45,18 @@ export function ProcessingProvider({
   >(null);
 
   const startProcessing = useCallback((fileId: string) => {
-    // Close any existing connection
-    if (eventSourceRef.current) {
+    if (
+      eventSourceRef.current &&
+      eventSourceRef.current.readyState !== EventSource.CLOSED
+    ) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
 
-    const baseUrl =
-      process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-    const streamUrl = `${baseUrl}/api/events/stream?file_id=${encodeURIComponent(fileId)}`;
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
+    const normalizedUrl = apiUrl.replace(/\/$/, '');
+    // Avoid double prefixing if the route itself contains /api/
+    const streamUrl = `${normalizedUrl}/events/stream?file_id=${encodeURIComponent(fileId)}`;
     const es = new EventSource(streamUrl);
     eventSourceRef.current = es;
 

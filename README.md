@@ -1,108 +1,158 @@
-# thi-data
-Data Warehouse for the Texas Hearing Institute.
+# Texas Hearing Institute Data Warehouse (thi-data)
 
-This repository provides a Data Warehouse designed to ingest, validate, and store patient and organizational data. The system is accessed via Power BI for reporting and analytics.
-
-## Prerequisites
-The system is orchestrated using the **Make utility**, which provides a single entry point for all major operations. Before you begin, ensure you have the following installed:
-*   **Docker Desktop** (or equivalent): Required for running the core infrastructure.
-*   **Make**: Orchestration utility (pre-installed on macOS and most Linux distributions).
-*   **Node.js (v18+)**: Required only for local frontend development.
-*   **Python (v3.11+)**: Required only for local backend development.
+This repository provides a self-hosted Data Warehouse designed to ingest, validate, and store patient and organizational data. It serves as the primary source of truth for the Texas Hearing Institute, with a schema optimized for direct integration with Power BI for clinical reporting and advanced analytics.
 
 ---
 
-## Production Deployment (On-Prem)
-For clients and operators deploying the full system, use the following command to launch the production-ready background stack:
+## Quick Start Access
+
+Once the system is deployed, **visit the Web Portal at: http://localhost**
+
+*   **Local Access**: [http://localhost](http://localhost)
+*   **Organizational Access**: Replace `localhost` with the server's local IP address (e.g., `http://10.0.0.50`).
+*   **Documentation & Monitoring**:
+    *   **API Specs**: `http://localhost/api/docs`
+    *   **Task Queue**: `http://localhost:15672` (User: `guest` / Pass: `guest`)
+
+---
+
+## Architectural Overview
+
+The system is composed of seven specialized microservices orchestrated via Docker. This architecture ensures high availability, data integrity, and background processing capabilities.
+
+### Application Services
+*   **Gateway (thi-proxy)**: An Nginx-based reverse proxy that handles all incoming traffic on Port 80, routing requests to either the Frontend or the API.
+*   **Frontend (thi-frontend)**: A Next.js web application for data management, file uploads, and warehouse monitoring.
+*   **API (thi-backend)**: A FastAPI server that orchestrates metadata, handles file registry logic, and communicates with the task queue.
+*   **Worker (thi-celery-worker)**: A dedicated Python worker that performs the "heavy lifting" of the ETL (Extract, Transform, Load) process, including schema validation and SQL generation.
+
+### Infrastructure Services
+*   **Warehouse (thi-db)**: A PostgreSQL 16 database instance optimized for analytical queries and Power BI connectivity.
+*   **Queue (thi-rabbitmq)**: An AMQP message broker that ensures reliable communication between the API and the background workers.
+*   **Storage (thi-seaweedfs)**: An S3-compatible object storage layer used for archiving raw data assets before they are transformed into the relational warehouse.
+
+---
+
+## System Requirements
+
+The following specifications are recommended for stable production operation within an organizational network.
+
+### Hardware Specifications
+| Resource | Minimum | Recommended |
+| :--- | :--- | :--- |
+| CPU | 2 Cores | 4 Cores+ |
+| RAM | 4 GB | 8 GB+ |
+| Storage | 10 GB | 50 GB+ (SSD preferred) |
+
+### Resource Consumption Profile
+*   **Standard Operation**: The idle stack consumes approximately 1.3 GB of RAM.
+*   **Peak Requirements**: During the Next.js build phase or large-scale data ingestion, memory usage may temporarily increase to 3-4 GB.
+
+---
+
+## Deployment Guide (On-Premise)
+
+The system is delivered as a containerized stack orchestrated by the Make utility. Ensure that Docker Desktop (or OrbStack) and the Make utility are installed on the host machine.
+
+### 1. Launch the System
+For a production-ready background deployment, execute:
 
 ```bash
 make deploy
 ```
 
+This command builds the required images, initializes all microservices, executes database migrations, and verifies the health of the API layer.
 
-This command automatically initializes and starts the following services:
--   **Postgres 16**: The central relational database and primary data warehouse.
--   **RabbitMQ**: The message broker for asynchronous task processing.
--   **SeaweedFS**: S3-compatible local object storage for file persistence.
--   **FastAPI Backend**: The core API server providing the REST interface for schema validation and file management.
--   **Celery Worker**: The background processing engine that handles file validation and ETL.
-
-### Health Checks and Monitoring
-Once the system is deployed, you can verify the health of the services using these interfaces:
--   **System Status**: Run `make ps` to view the status of all containers.
--   **API Documentation**: [http://localhost:8000/docs](http://localhost:8000/docs)
--   **Task Queue Dashboard**: [http://localhost:15672](http://localhost:15672) (guest / guest)
--   **Storage Explorer**: [http://localhost:8888](http://localhost:8888)
+### 2. Operational Monitoring
+*   **Service Status**: Run `make ps` to view the uptime and health status of all containers.
+*   **Resource Usage**: Run `docker compose top` to view real-time CPU and Memory consumption across the stack.
+*   **Live Logs**: Run `docker compose logs -f` for a combined stream of all application events.
 
 ---
 
-## Power BI Integration (Data Visualization)
-This system is optimized for use as a Data Warehouse for Power BI. To connect your reports to the warehouse, follow these steps:
+## Technical Configuration
 
-1.  **Open Power BI Desktop**.
-2.  Go to **Get Data** > **PostgreSQL Database**.
-3.  Enter the following connection details:
+The platform is designed to be highly configurable via environment variables in the `docker-compose.yml` file. These can be overridden to resolve port conflicts or adjust security settings.
 
-| Parameter | Value (Out-of-the-Box Defaults) |
-|-----------|----------------------------------|
-| **Server** | `localhost` (Or your server IP) |
-| **Database** | `postgres` |
-| **Authentication** | Use the **Database** tab |
-| **User** | `postgres` |
-| **Password** | `password` |
-| **Port** | `5432` |
+### Network & Routing
+| Variable | Component | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `PUBLIC_PORT` | Proxy | The external port where the website is accessible. | `80` |
+| `API_SUBPATH` | Proxy | The URL prefix for API communication (e.g., `/v1`). | `/api` |
+| `API_PORT` | Backend | The internal container port for the FastAPI server. | `8000` |
 
-4.  Once connected, you will see the tables generated from your processed CSV/XLSX files. You can now build relationships and visualizations directly in Power BI.
+### Infrastructure Components
+| Variable | Component | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `DB_PORT` | Postgres | External port for database access (Power BI). | `5432` |
+| `DB_NAME` | Postgres | The name of the primary database. | `postgres` |
+| `DB_USER` | Postgres | The master username for the database. | `postgres` |
+| `DB_PASSWORD` | Postgres | The master password for the database. | `password` |
+| `RABBITMQ_PORT` | RabbitMQ | External port for AMQP message traffic. | `5672` |
+| `RABBITMQ_MGMT_PORT` | RabbitMQ | Port for the management dashboard. | `15672` |
+| `STORAGE_S3_PORT` | SeaweedFS | Port for S3-compatible file storage. | `8333` |
+
+To override a configuration on launch:
+```bash
+PUBLIC_PORT=8080 DB_PORT=5433 make deploy
+```
+
+### Changing the Public Access Port
+
+If Port 80 is already in use on your server, you can change the platform's access port by modifying the `PUBLIC_PORT` variable in the `docker-compose.yml` file.
+
+1.  Open `docker-compose.yml`.
+2.  Locate `PUBLIC_PORT` in the `proxy` service environment.
+3.  Change the value (e.g., `PUBLIC_PORT: 8080`).
+4.  Restart the system using `make deploy`.
+
+The system will then be accessible at `http://localhost:8080`.
 
 ---
 
-## Security and Customization
-The system is built to run immediately "out of the box" using the default credentials listed above, which are standard, dummy defaults.
+## Power BI Integration
 
-When preparing to deploy this to your organization's live environment, you must override these defaults directly within the `docker-compose.yml` file to secure the warehouse. You do not need to manage a separate `.env` file.
+The warehouse is optimized for direct connectivity with Power BI Desktop or Service.
 
-Open `docker-compose.yml` and update the default `postgres` and `password` variables across these three services:
-1.  **db**: Update `POSTGRES_USER` and `POSTGRES_PASSWORD`.
-2.  **backend**: Update `user` and `password` to match the new database credentials.
-3.  **celery_worker**: Update `user` and `password` to match the new database credentials.
+1.  Open **Power BI Desktop**.
+2.  Navigate to **Get Data** > **PostgreSQL Database**.
+3.  Provide the following connection parameters:
+
+| Parameter | Recommended Value |
+|-----------|-------------------|
+| Server | `localhost` (Or the server's local IP address) |
+| Database | `postgres` (Or the configured `DB_NAME`) |
+| Authentication | Select the **Database** tab |
+| Port | `5432` (Or the configured `DB_PORT`) |
+| Username | `postgres` (Or the configured `DB_USER`) |
+| Password | `password` (Or the configured `DB_PASSWORD`) |
+
+---
+
+## Security & Production Hardening
+
+Before deploying to a production organizational environment, the default credentials MUST be overridden inside the `docker-compose.yml` file.
+
+### Credential Synchronization
+The system automatically synchronizes credentials across the following service layers:
+*   **Database Cluster**: `DB_USER` and `DB_PASSWORD` are shared between the core database, the API, and the processing workers.
+*   **Message Broker**: `RABBITMQ_USER` and `RABBITMQ_PASS` are shared between the broker and its clients.
+*   **Storage Layer**: `STORAGE_KEY` and `STORAGE_SECRET` are shared between the file server and the ingestion engine.
 
 ---
 
 ## Development Workflows
-For developers wishing to contribute or modify the codebase, follow these steps.
 
-### 1. Installation
-Prepare your local machine by installing the necessary dependencies for both the frontend and backend:
+### 1. Environment Initialization
 ```bash
 make install
 ```
 
-### 2. Local Stack Execution
--   **Full Stack (Recommended)**: Starts everything in Docker.
-    ```bash
-    make dev
-    ```
--   **Hybrid Mode (Fastest iterations)**: Runs the infrastructure (DB/Queue/Storage) in Docker, but executes the API and Next.js processes directly on your host machine for optimized debugging and hot-reloading.
-    ```bash
-    make dev-local
-    ```
+### 2. Execution Modes
+*   **Full Stack**: `make dev` (Executes the entire stack within Docker).
+*   **Hybrid Development**: `make dev-local` (Executes the database and queue in Docker while running application code on the host machine).
 
-### 3. Testing
-All backend logic is covered by a comprehensive `pytest` suite.
+### 3. Verification
 ```bash
 make test
 ```
-This command ensures the infrastructure is healthy and executes the tests inside the backend container to ensure environment parity.
-
----
-
-## Makefile Reference Guide
-| Command | Primary Use Case | Action |
-|---------|------------------|--------|
-| `make deploy` | **Production Startup** | Launches the full background stack and waits for health checks. |
-| `make dev` | **Local Development** | Starts the full stack and the Next.js development server. |
-| `make dev-local` | **Active Coding** | Runs DB/MQ in Docker while services run on the host. |
-| `make test` | **Quality Assurance** | Executes the full test suite in the backend container. |
-| `make install` | **Setup** | Configures local npm and Python virtual environments. |
-| `make ps` | **Monitoring** | Shows the uptime and status of all system containers. |
-| `make down` | **Shutdown** | Stops and removes all containers, networks, and volumes. |

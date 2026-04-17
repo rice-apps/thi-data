@@ -30,10 +30,14 @@ export class HttpDataService implements IDataService {
 
   constructor(authProvider: AuthProvider, baseUrl?: string) {
     this.authProvider = authProvider;
-    const url =
-      baseUrl || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    // Use the provided baseUrl, or the global environment variable, or default to /api
+    const url = baseUrl || process.env.NEXT_PUBLIC_API_URL || '/api';
+    
+    // Normalize: remove trailing slash
+    const normalizedUrl = url.replace(/\/$/, '');
+    
     this.httpClient = new HttpClient({
-      baseUrl: `${url.replace(/\/$/, '')}/api`,
+      baseUrl: normalizedUrl,
     });
   }
 
