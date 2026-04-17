@@ -95,6 +95,42 @@ class TestGetAllTables:
         assert "owls__corrupted" not in tables
         assert "corrupted_rows" not in tables
 
+    def test_shows_user_tables_with_test_in_name(self):
+        app, _ = _make_app()
+
+        with patch("api.tables.db_module") as mock_db_mod:
+            mock_db_mod.Base.classes.keys.return_value = [
+                "screening_test_results",
+                "testosterone_levels",
+                "test_data",
+            ]
+
+            client = TestClient(app)
+            resp = client.get("/api/tables")
+
+        assert resp.status_code == 200
+        tables = resp.json()["tables"]
+        assert "screening_test_results" in tables
+        assert "testosterone_levels" in tables
+        assert "test_data" not in tables
+
+    def test_hides_dlt_internal_prefix_tables(self):
+        app, _ = _make_app()
+
+        with patch("api.tables.db_module") as mock_db_mod:
+            mock_db_mod.Base.classes.keys.return_value = [
+                "patients",
+                "_dlt_loads",
+            ]
+
+            client = TestClient(app)
+            resp = client.get("/api/tables")
+
+        assert resp.status_code == 200
+        tables = resp.json()["tables"]
+        assert "patients" in tables
+        assert "_dlt_loads" not in tables
+
 
 # GET /api/tables_with_metadata tests
 

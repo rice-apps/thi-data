@@ -107,6 +107,7 @@ services:
       - "3000"
     environment:
       - NEXT_PUBLIC_API_URL=${API_SUBPATH:-/api}
+      - INTERNAL_API_URL=http://backend:${API_PORT:-8000}${API_SUBPATH:-/api}
     depends_on:
       - backend
 

@@ -29,10 +29,10 @@ def get_all_tables():
 
 
 def _is_visible(table_name: str) -> bool:
-    from core.constants import HIDDEN_TABLE_PATTERNS
+    from core.constants import DLT_INTERNAL_TABLE_PREFIX
     if table_name in UNLISTED_TABLES:
         return False
-    if any(p in table_name for p in HIDDEN_TABLE_PATTERNS):
+    if table_name.startswith(DLT_INTERNAL_TABLE_PREFIX):
         return False
     return not any(table_name.endswith(s) for s in HIDDEN_TABLE_SUFFIXES)
 

@@ -123,8 +123,9 @@ export default function DataUploadPage() {
       formData.append('file', file);
 
       const userName = await authService.getCurrentUserName();
-      const baseUrl =
-        process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const apiBase = (
+        process.env.NEXT_PUBLIC_API_URL || '/api'
+      ).replace(/\/$/, '');
 
       const xhr = new XMLHttpRequest();
 
@@ -173,7 +174,7 @@ export default function DataUploadPage() {
       const uploadQuery = tableName
         ? `?table_name=${encodeURIComponent(tableName)}`
         : '';
-      xhr.open('POST', `${baseUrl}/api/files/upload${uploadQuery}`);
+      xhr.open('POST', `${apiBase}/files/upload${uploadQuery}`);
       if (userName) {
         xhr.setRequestHeader('X-User-Name', userName);
       }

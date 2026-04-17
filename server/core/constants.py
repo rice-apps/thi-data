@@ -14,5 +14,5 @@ UNLISTED_TABLES = [
 # Suffixes that mark internal tables
 HIDDEN_TABLE_SUFFIXES = ["__corrupted"]
 
-# Prefixes or substrings that mark test or internal system tables
-HIDDEN_TABLE_PATTERNS = ["test_", "_test", "edge_cases", "_dlt"]
+# DLT-managed tables
+DLT_INTERNAL_TABLE_PREFIX = "_dlt_"

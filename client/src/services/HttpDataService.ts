@@ -24,18 +24,36 @@ export type FileRegistryUpdate = {
 import type { IDataService, AuthProvider } from './interfaces';
 import { HttpClient } from './HttpClient';
 
+function resolveDataServiceBaseUrl(explicit?: string): string {
+  if (explicit) {
+    return explicit.replace(/\/$/, '');
+  }
+  const publicBase = (
+    process.env.NEXT_PUBLIC_API_URL || '/api'
+  ).replace(/\/$/, '');
+  if (
+    publicBase.startsWith('http://') ||
+    publicBase.startsWith('https://')
+  ) {
+    return publicBase;
+  }
+  if (typeof window === 'undefined') {
+    const internal = process.env.INTERNAL_API_URL?.trim().replace(/\/$/, '');
+    if (internal) {
+      return internal;
+    }
+  }
+  return publicBase;
+}
+
 export class HttpDataService implements IDataService {
   private httpClient: HttpClient;
   private authProvider: AuthProvider;
 
   constructor(authProvider: AuthProvider, baseUrl?: string) {
     this.authProvider = authProvider;
-    // Use the provided baseUrl, or the global environment variable, or default to /api
-    const url = baseUrl || process.env.NEXT_PUBLIC_API_URL || '/api';
-    
-    // Normalize: remove trailing slash
-    const normalizedUrl = url.replace(/\/$/, '');
-    
+    const normalizedUrl = resolveDataServiceBaseUrl(baseUrl);
+
     this.httpClient = new HttpClient({
       baseUrl: normalizedUrl,
     });
