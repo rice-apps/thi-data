@@ -13,6 +13,17 @@ server {
     # Disable upload size limits for large CSV files
     client_max_body_size 0;
 
+    location ~ ^${API_SUBPATH}/auth($|/.*)$ {
+        proxy_pass http://frontend_nodes;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     # API Proxy
     location ${API_SUBPATH}/ {
         proxy_pass http://backend_nodes${API_SUBPATH}/;
