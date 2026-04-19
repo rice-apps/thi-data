@@ -1,20 +1,22 @@
-upstream backend_nodes {
-    server backend:${BACKEND_PORT};
-}
-
-upstream frontend_nodes {
-    server frontend:3000;
-}
+# Docker Compose recreates containers and changes their IPs. Plain `upstream { server name; }`
+# resolves names once at nginx start → stale IP → 502. Resolver + variables re-resolve on each
+# interval (valid=). See https://nginx.org/en/docs/http/ngx_http_core_module.html#resolver
+#
+# Better Auth: path must match client `BETTER_AUTH_BASE_PATH` (client/src/lib/auth-path.ts).
 
 server {
     listen 80;
     server_name localhost;
 
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $frontend_svc frontend:3000;
+    set $backend_svc backend:${BACKEND_PORT};
+
     # Disable upload size limits for large CSV files
     client_max_body_size 0;
 
     location ~ ^/auth($|/.*)$ {
-        proxy_pass http://frontend_nodes;
+        proxy_pass http://$frontend_svc;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -24,9 +26,8 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # API Proxy
     location ${API_SUBPATH}/ {
-        proxy_pass http://backend_nodes${API_SUBPATH}/;
+        proxy_pass http://$backend_svc;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -45,7 +46,7 @@ server {
 
     # Frontend Proxy
     location / {
-        proxy_pass http://frontend_nodes;
+        proxy_pass http://$frontend_svc;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -57,7 +58,7 @@ server {
 
     # Handle Next.js HMR (Hot Module Replacement)
     location /_next/webpack-hmr {
-        proxy_pass http://frontend_nodes/_next/webpack-hmr;
+        proxy_pass http://$frontend_svc;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";

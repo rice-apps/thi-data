@@ -65,9 +65,9 @@ up:
 up-detach start:
 	$(DC) up -d --build
 
-# Full background stack: Postgres, RabbitMQ, SeaweedFS, API, Celery, Frontend.
-deploy: up-detach wait-db wait-api
-	@echo "Stack is up — Website: http://localhost | API Specs: http://localhost/api/docs"
+# Full background stack: Postgres, RabbitMQ, SeaweedFS, API, Celery, Frontend (same DB bootstrap as dev).
+deploy: up-detach wait-db wait-api migrate
+	@echo "Stack is up — Website: http://localhost | API docs: http://localhost/api/docs"
 
 down stop:
 	$(DC) down

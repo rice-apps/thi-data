@@ -22,7 +22,13 @@ async def lifespan(app: FastAPI):
     init_app_services()
     yield
 
-app = FastAPI(lifespan=lifespan)
+# Docs/OpenAPI under /api/* so the nginx API prefix and Makefile URLs stay consistent.
+app = FastAPI(
+    lifespan=lifespan,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+)
 
 app.add_middleware(
     CORSMiddleware,

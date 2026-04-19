@@ -102,14 +102,18 @@ services:
       - backend
     command: celery -A celery_task.app worker --loglevel=info
 
+  # Next.js: auth routes live at /auth (see client/src/lib/auth-path.ts), never under /api.
   frontend:
     build:
       context: ./client
       dockerfile: Dockerfile
+      args:
+        BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
     container_name: thi-frontend
     expose:
       - "3000"
     environment:
+      - RUNNING_IN_DOCKER=1
       - NEXT_PUBLIC_API_URL=${API_SUBPATH:-/api}
       - INTERNAL_API_URL=http://backend:${API_PORT:-8000}${API_SUBPATH:-/api}
       - NEXT_PUBLIC_BETTER_AUTH_URL=${NEXT_PUBLIC_BETTER_AUTH_URL:-}

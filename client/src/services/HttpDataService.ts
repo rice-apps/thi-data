@@ -24,6 +24,9 @@ export type FileRegistryUpdate = {
 import type { IDataService, AuthProvider } from './interfaces';
 import { HttpClient } from './HttpClient';
 
+/** When set, RSC uses this instead of authClient (which HTTP-fetches and breaks under Docker). */
+export type ServerAuthHeadersResolver = () => Promise<Record<string, string>>;
+
 function resolveDataServiceBaseUrl(explicit?: string): string {
   if (explicit) {
     return explicit.replace(/\/$/, '');
@@ -38,8 +41,11 @@ function resolveDataServiceBaseUrl(explicit?: string): string {
     return publicBase;
   }
   if (typeof window === 'undefined') {
+    const inDockerRuntime =
+      process.env.RUNNING_IN_DOCKER === '1' ||
+      process.env.DOCKER_CONTAINER === '1';
     const internal = process.env.INTERNAL_API_URL?.trim().replace(/\/$/, '');
-    if (internal) {
+    if (internal && inDockerRuntime) {
       return internal;
     }
     // Relative NEXT_PUBLIC_API_URL: Node fetch needs an absolute URL (make dev / local SSR).
@@ -55,9 +61,15 @@ function resolveDataServiceBaseUrl(explicit?: string): string {
 export class HttpDataService implements IDataService {
   private httpClient: HttpClient;
   private authProvider: AuthProvider;
+  private resolveServerAuthHeaders?: ServerAuthHeadersResolver;
 
-  constructor(authProvider: AuthProvider, baseUrl?: string) {
+  constructor(
+    authProvider: AuthProvider,
+    baseUrl?: string,
+    resolveServerAuthHeaders?: ServerAuthHeadersResolver,
+  ) {
     this.authProvider = authProvider;
+    this.resolveServerAuthHeaders = resolveServerAuthHeaders;
     const normalizedUrl = resolveDataServiceBaseUrl(baseUrl);
 
     this.httpClient = new HttpClient({
@@ -66,6 +78,9 @@ export class HttpDataService implements IDataService {
   }
 
   private async getAuthHeaders(): Promise<Record<string, string>> {
+    if (typeof window === 'undefined' && this.resolveServerAuthHeaders) {
+      return this.resolveServerAuthHeaders();
+    }
     const userName = await this.authProvider.getCurrentUserName();
     if (userName) {
       return { 'X-User-Name': userName };

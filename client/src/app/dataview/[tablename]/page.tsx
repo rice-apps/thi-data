@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { loginResult } from '@/utils/checklogin';
 import { redirect } from 'next/navigation';
 import { ServiceFactory } from '@/services';
+import { HttpDataService } from '@/services/HttpDataService';
+import { getSessionUserForApi } from '@/lib/auth-server-session';
 import type { TableRow } from '@/types';
 import DataTable from './DataTable';
 
@@ -19,7 +21,15 @@ export default async function DataViewPage(props: PageProps) {
     redirect('/login');
   }
 
-  const dataService = ServiceFactory.getDataService();
+  const dataService = new HttpDataService(
+    ServiceFactory.getAuthService(),
+    undefined,
+    async (): Promise<Record<string, string>> => {
+      const user = await getSessionUserForApi();
+      const name = user?.name || user?.email;
+      return name ? { 'X-User-Name': name } : {};
+    },
+  );
 
   let data: TableRow[] = [];
   let columns: string[] = [];

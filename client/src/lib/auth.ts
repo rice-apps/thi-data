@@ -1,6 +1,7 @@
 import { betterAuth } from 'better-auth';
 import { nextCookies } from 'better-auth/next-js';
 import { Pool } from 'pg';
+import { BETTER_AUTH_BASE_PATH } from '@/lib/auth-path';
 
 const connectionString =
   process.env.DATABASE_URL ||
@@ -15,6 +16,7 @@ export const auth = betterAuth({
   database: new Pool({ connectionString }),
   secret: betterAuthSecret,
   baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3000',
+  basePath: BETTER_AUTH_BASE_PATH,
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,

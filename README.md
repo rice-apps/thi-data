@@ -72,41 +72,15 @@ This command builds the required images, initializes all microservices, executes
 
 ## Technical Configuration
 
-The platform is designed to be highly configurable via environment variables in the `docker-compose.yml` file. These can be overridden to resolve port conflicts or adjust security settings.
+Override Compose via repo-root **`.env`** or the shell (see **Environment variables**). Example:
 
-### Network & Routing
-| Variable | Component | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `PUBLIC_PORT` | Proxy | The external port where the website is accessible. | `80` |
-| `API_SUBPATH` | Proxy | The URL prefix for API communication (e.g., `/v1`). | `/api` |
-| `API_PORT` | Backend | The internal container port for the FastAPI server. | `8000` |
-
-### Infrastructure Components
-| Variable | Component | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `DB_PORT` | Postgres | External port for database access (Power BI). | `5432` |
-| `DB_NAME` | Postgres | The name of the primary database. | `postgres` |
-| `DB_USER` | Postgres | The master username for the database. | `postgres` |
-| `DB_PASSWORD` | Postgres | The master password for the database. | `password` |
-| `RABBITMQ_PORT` | RabbitMQ | External port for AMQP message traffic. | `5672` |
-| `RABBITMQ_MGMT_PORT` | RabbitMQ | Port for the management dashboard. | `15672` |
-| `STORAGE_S3_PORT` | SeaweedFS | Port for S3-compatible file storage. | `8333` |
-
-To override a configuration on launch:
 ```bash
 PUBLIC_PORT=8080 DB_PORT=5433 make deploy
 ```
 
-### Changing the Public Access Port
+### Changing the public access port
 
-If Port 80 is already in use on your server, you can change the platform's access port by modifying the `PUBLIC_PORT` variable in the `docker-compose.yml` file.
-
-1.  Open `docker-compose.yml`.
-2.  Locate `PUBLIC_PORT` in the `proxy` service environment.
-3.  Change the value (e.g., `PUBLIC_PORT: 8080`).
-4.  Restart the system using `make deploy`.
-
-The system will then be accessible at `http://localhost:8080`.
+Set **`PUBLIC_PORT`** in **`.env`** (and align **`BETTER_AUTH_URL`** with the host/port users type in the browser), then **`make deploy`**.
 
 ---
 
@@ -156,3 +130,98 @@ make install
 ```bash
 make test
 ```
+
+---
+
+## Environment variables
+
+| File | When |
+| :--- | :--- |
+| **`.env`** at repo root | Docker Compose and **`make dev`** (copy from **`.env.example`**). |
+| **`client/.env.local`** | Next.js running on your machine (copy from **`client/.env.example`**). |
+| **`server/.env`** | FastAPI / Celery on your machine (copy from **`server/.env.example`**; keys match **`server/core/config.py`**). |
+
+### Repo root `.env` (ports & public URLs)
+
+| Variable | Meaning |
+| :--- | :--- |
+| `PUBLIC_PORT` | Host port for the website (nginx → port 80 in the container). |
+| `API_SUBPATH` | URL prefix for the API (default `/api`). Nginx and the browser both use this path. |
+| `API_PORT` | Port FastAPI listens on **inside** Docker; nginx sends `/api` traffic here. |
+| `API_PUBLISH_HOST` | Which host address the API port is bound to on the machine (default `127.0.0.1`). |
+| `API_PUBLISH_PORT` | Which **host** port reaches FastAPI; **`make dev`** points Next at this. |
+
+### Repo root `.env` (database)
+
+| Variable | Meaning |
+| :--- | :--- |
+| `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Postgres user, password, and database name for the stack. |
+| `DB_PORT` | Postgres **on the host** (e.g. Power BI). Next may use this when building a DB URL. |
+| `DATABASE_URL` | Optional; full Postgres URL for Better Auth in **`thi-frontend`**. If unset, Next builds a URL from **`DB_*`**. |
+
+### Repo root `.env` (Better Auth / Next in Docker)
+
+| Variable | Meaning |
+| :--- | :--- |
+| `BETTER_AUTH_SECRET` | Signing secret; required when **building** the frontend image and when **running** it. |
+| `BETTER_AUTH_URL` | Public site URL **without a path** (e.g. `http://localhost`). Default uses `PUBLIC_PORT`. |
+| `NEXT_PUBLIC_BETTER_AUTH_URL` | Optional; overrides the browser auth client base. Empty = same origin as the page. |
+
+### Repo root `.env` (RabbitMQ & storage)
+
+| Variable | Meaning |
+| :--- | :--- |
+| `RABBITMQ_USER`, `RABBITMQ_PASS` | Broker login; backend and worker connect with these. |
+| `RABBITMQ_PORT`, `RABBITMQ_MGMT_PORT` | AMQP and management UI **on the host**. |
+| `STORAGE_KEY`, `STORAGE_SECRET` | Credentials for SeaweedFS / S3-style access. |
+| `STORAGE_S3_PORT`, `STORAGE_MASTER_PORT`, `STORAGE_FILER_PORT` | SeaweedFS services **on the host**. |
+
+### Set by Compose (reference only)
+
+You normally **do not** put these in **`.env`**; Compose or the Dockerfile sets them.
+
+| Variable | Role |
+| :--- | :--- |
+| `INTERNAL_API_URL` | On **`thi-frontend`**: base URL for server-side calls to FastAPI (`http://backend:…` + `API_SUBPATH`). |
+| `NEXT_PUBLIC_API_URL` | On **`thi-frontend`**: same value as **`API_SUBPATH`** for the browser. |
+| `RUNNING_IN_DOCKER` | On **`thi-frontend`**: `1` so SSR uses **`INTERNAL_API_URL`**. |
+| `DB_HOST` | On **`thi-frontend`**: Postgres hostname (default `db`). |
+| `BACKEND_PORT` | In **nginx** template env: same as **`API_PORT`**. |
+| Backend `user` / `password` / `host` / `port` / `dbname` | SQLAlchemy env for API and worker; Compose sets `host=db` and maps user/db from **`DB_*`**. |
+| `broker_url` | AMQP URL for API and worker; Compose builds it from **`RABBITMQ_*`**. |
+| `ORIGIN_URL` | On API/worker containers: CORS-related (**`config.py`** reads **`origin_url`**). |
+| `USE_S3`, `S3_ENDPOINT`, `S3_KEY`, `S3_SECRET`, `S3_BUCKET` | Object storage; in Compose **`S3_ENDPOINT`** is the SeaweedFS service. |
+| `API_SERVER_URL` | On **celery**: base URL to call the API (`http://backend:${API_PORT}`). |
+
+Optional: set **`DOCKER_CONTAINER=1`** instead of relying on **`RUNNING_IN_DOCKER`** for the same SSR API behavior in **`HttpDataService`**.
+
+### `client/.env.local` (Next on the host)
+
+| Variable | Meaning |
+| :--- | :--- |
+| `NEXT_PUBLIC_API_URL` | Browser path to the API (e.g. `/api`). |
+| `NEXT_DEV_PROXY_API_ORIGIN` | Full URL to FastAPI (e.g. `http://127.0.0.1:8000`) when the path above is relative. |
+| `NEXT_PUBLIC_BACKEND_ORIGIN` | Full URL to FastAPI for **SSE** (EventSource). |
+
+### `server/.env` (API / worker on the host)
+
+All keys are read in **`server/core/config.py`**. Common ones:
+
+| Variable | Meaning |
+| :--- | :--- |
+| `user`, `password`, `host`, `port`, `dbname` | Postgres for SQLAlchemy. |
+| `broker_url` | RabbitMQ URL. |
+| `origin_url` | CORS (**`Settings.ORIGIN_URL`**). |
+| `USE_S3`, `S3_ENDPOINT`, `S3_KEY`, `S3_SECRET`, `S3_BUCKET`, `S3_REGION` | Object storage. |
+| `API_SERVER_URL` | Worker → API (default `http://backend:8000`). |
+| `DLT_DESTINATION`, `DLT_DATASET`, `DUCKDB_TEMP_DIR` | ETL / DLT. |
+
+### Frontend Docker image (build & run)
+
+| Variable | Meaning |
+| :--- | :--- |
+| `BETTER_AUTH_SECRET` | Build **ARG** and runtime env (see above). |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Build **ARG**s; baked into the client bundle unless you override at build time. |
+| `NEXT_PUBLIC_API_URL` | Build-time default `/api`; Compose overwrites at runtime for the container. |
+| `NEXT_JS_DISABLE_ESLINT`, `NEXT_TELEMETRY_DISABLED` | Builder-only. |
+| `NODE_ENV`, `PORT`, `HOSTNAME` | Runtime Node process (`production`, `3000`, `0.0.0.0`). |

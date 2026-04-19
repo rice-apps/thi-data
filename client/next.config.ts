@@ -25,14 +25,6 @@ function devApiRewrites():
   ).replace(/\/$/, '');
   return [
     {
-      source: `/auth`,
-      destination: `/auth`,
-    },
-    {
-      source: `/auth/:path*`,
-      destination: `/auth/:path*`,
-    },
-    {
       source: `${subpath}/:path*`,
       destination: `${proxyOrigin}${subpath}/:path*`,
     },
