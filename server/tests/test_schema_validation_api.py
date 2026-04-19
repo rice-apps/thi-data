@@ -252,7 +252,10 @@ class TestValidateSchemaEndpoint:
             "sample": {}
         }
 
-        with patch("api.validation.infer_from_file", return_value=mock_infer_result):
+        with patch(
+            "services.file_schema_service.infer_from_file",
+            return_value=mock_infer_result,
+        ):
             response = client.post("/api/validate_schema", params={"file_id": "test-123"})
 
         assert response.status_code == 200
@@ -345,7 +348,10 @@ class TestValidateSchemaEndpoint:
         mock_repo.update_by_field.return_value = 1
         app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
 
-        with patch("api.validation.infer_from_file", side_effect=Exception("parse error")):
+        with patch(
+            "services.file_schema_service.infer_from_file",
+            side_effect=Exception("parse error"),
+        ):
             client = TestClient(app)
             response = client.post("/api/validate_schema", params={"file_id": "f1"})
 
@@ -485,7 +491,10 @@ class TestErrorSanitization:
         mock_repo.update_by_field.return_value = 1
         app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
 
-        with patch("api.validation.infer_from_file", side_effect=Exception("UnicodeDecodeError at byte 0xFF")):
+        with patch(
+            "services.file_schema_service.infer_from_file",
+            side_effect=Exception("UnicodeDecodeError at byte 0xFF"),
+        ):
             client = TestClient(app)
             resp = client.post("/api/validate_schema", params={"file_id": "f1"})
 

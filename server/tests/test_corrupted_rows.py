@@ -146,12 +146,11 @@ class TestResolveEndpoint:
 # Type Validation unit tests
 
 class TestTypeValidation:
-    """Unit tests for the _validate_and_cast helper function."""
+    """Unit tests for coerce_value_for_column (reflected SQLAlchemy types)."""
 
     def setup_method(self):
-        """Import the validation function."""
-        from api.corrupted_rows import _validate_and_cast
-        self.validate = _validate_and_cast
+        from services.reflected_columns import coerce_value_for_column
+        self.validate = coerce_value_for_column
 
     def test_integer_valid(self):
         assert self.validate("age", "25", Integer()) == 25
@@ -356,9 +355,15 @@ class TestResolveRequestBody:
             mock_pk_col.key = "id"
             mock_mapper.primary_key = [mock_pk_col]
 
-            with patch("api.corrupted_rows.sa_inspect", return_value=mock_mapper):
+            with patch(
+                "services.corrupted_row_resolution.sa_inspect",
+                return_value=mock_mapper,
+            ):
                 mock_record.name = "old_value"
-                with patch("api.corrupted_rows.model_to_dict", return_value={"id": 1, "name": "Alice"}):
+                with patch(
+                    "services.corrupted_row_resolution.model_to_dict",
+                    return_value={"id": 1, "name": "Alice"},
+                ):
                     client = TestClient(app)
                     resp = client.patch("/api/test_table/1/resolve", json={
                         "corrections": {"name": "Alice"}
@@ -373,12 +378,11 @@ class TestResolveRequestBody:
 
 
 class TestResolveNoDoubleCommit:
-    """resolve_corrupted_row should use flush(), not commit()."""
+    """Resolution service should flush ORM state but not commit the session."""
 
     def test_no_explicit_commit_call(self):
-        """Verify the function source uses db.flush() not db.commit()."""
         import inspect
-        from api.corrupted_rows import resolve_corrupted_row
-        source = inspect.getsource(resolve_corrupted_row)
-        assert "db.commit()" not in source
-        assert "db.flush()" in source
+        from services.corrupted_row_resolution import CorruptedRowResolutionService
+        source = inspect.getsource(CorruptedRowResolutionService.resolve)
+        assert "commit()" not in source
+        assert "flush()" in source
