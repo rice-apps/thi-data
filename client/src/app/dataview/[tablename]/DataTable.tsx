@@ -114,6 +114,7 @@ export default function DataTable({
   const [submitting, setSubmitting] = useState(false);
 
   const observerTarget = useRef<HTMLDivElement>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
   const isFirstRender = useRef(true);
 
   // Debounce search input
@@ -195,8 +196,12 @@ export default function DataTable({
     showError,
   ]);
 
-  // Infinite scroll observer
+  // Infinite scroll: observe sentinel within the grid scrollport (not the viewport)
   useEffect(() => {
+    const root = tableScrollRef.current;
+    const element = observerTarget.current;
+    if (!root || !element) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
         if (
@@ -208,15 +213,12 @@ export default function DataTable({
           loadMore();
         }
       },
-      { threshold: 1.0 }
+      { root, rootMargin: '120px', threshold: 0 }
     );
 
-    const element = observerTarget.current;
-    if (element) observer.observe(element);
-    return () => {
-      if (element) observer.unobserve(element);
-    };
-  }, [loadMore, hasMore, loading, initialLoading]);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [loadMore, hasMore, loading, initialLoading, data.length, columns.length]);
 
   const refreshData = async () => {
     setPage(1);
@@ -425,14 +427,17 @@ export default function DataTable({
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
+          <div
+            ref={tableScrollRef}
+            className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-15rem)] [scrollbar-gutter:stable]"
+          >
+            <table className="w-full min-w-max">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
+                <tr className="border-b border-slate-200">
                   {columns.map(({ name, type }) => (
                     <th
                       key={name}
-                      className="px-6 py-4 text-left text-sm whitespace-nowrap align-bottom"
+                      className="px-6 py-4 text-left text-sm whitespace-nowrap align-bottom sticky top-0 z-20 bg-slate-50"
                     >
                       <div className="font-semibold text-slate-700">{name}</div>
                       {type ? (
@@ -442,8 +447,11 @@ export default function DataTable({
                       ) : null}
                     </th>
                   ))}
-                  <th className="px-6 py-4 text-right text-sm font-semibold text-slate-600 w-24">
-                    Actions
+                  <th
+                    scope="col"
+                    className="px-2.5 py-4 w-[5.25rem] min-w-[5.25rem] text-right align-bottom sticky top-0 right-0 z-30 bg-slate-50 border-l border-slate-200 shadow-[-4px_0_10px_-6px_rgba(15,23,42,0.14)]"
+                  >
+                    <span className="sr-only">Row actions</span>
                   </th>
                 </tr>
               </thead>
@@ -468,8 +476,8 @@ export default function DataTable({
                         key={rowKey}
                         className={`transition-colors group ${
                           isCorrupted
-                            ? 'bg-red-50 hover:bg-red-100'
-                            : 'hover:bg-slate-50'
+                            ? 'bg-red-50 hover:bg-red-100 focus-within:bg-red-100'
+                            : 'hover:bg-slate-50 focus-within:bg-slate-50'
                         }`}
                       >
                         {columns.map((col, colIndex) => {
@@ -496,18 +504,28 @@ export default function DataTable({
                             </td>
                           );
                         })}
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex justify-end gap-2">
+                        <td
+                          className={`pl-2 pr-2.5 py-4 text-right whitespace-nowrap sticky right-0 z-10 border-l border-slate-100 shadow-[-4px_0_10px_-6px_rgba(15,23,42,0.1)] ${
+                            isCorrupted
+                              ? 'bg-red-50 group-hover:bg-red-100 group-focus-within:bg-red-100'
+                              : 'bg-white group-hover:bg-slate-50 group-focus-within:bg-slate-50'
+                          }`}
+                        >
+                          <div
+                            className="flex justify-end items-center gap-1 transition-opacity duration-150 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100"
+                          >
                             <ActionButton
                               icon="edit"
                               onClick={() => handleEdit(row)}
                               title="Edit"
+                              tone="subtle"
                             />
                             <ActionButton
                               icon="delete"
                               onClick={() => handleDelete(row)}
                               title="Delete"
                               variant="danger"
+                              tone="subtle"
                             />
                           </div>
                         </td>
@@ -517,13 +535,13 @@ export default function DataTable({
                 )}
               </tbody>
             </table>
-          </div>
 
-          <div ref={observerTarget} className="p-6 text-center">
-            {(loading || initialLoading) && <Spinner />}
-            {!hasMore && data.length > 0 && (
-              <span className="text-slate-400 text-sm">End of results</span>
-            )}
+            <div ref={observerTarget} className="p-6 text-center">
+              {(loading || initialLoading) && <Spinner />}
+              {!hasMore && data.length > 0 && (
+                <span className="text-slate-400 text-sm">End of results</span>
+              )}
+            </div>
           </div>
         </div>
       </main>
@@ -702,16 +720,28 @@ function ActionButton({
   onClick,
   title,
   variant = 'default',
+  tone = 'default',
 }: {
   icon: 'edit' | 'delete';
   onClick: () => void;
   title: string;
   variant?: 'default' | 'danger';
+  tone?: 'default' | 'subtle';
 }) {
-  const surfaceClass =
+  const solidClass =
     variant === 'danger'
       ? 'text-red-700 border-red-200 bg-white hover:bg-red-50'
-      : `text-slate-800 border-slate-300 bg-white hover:bg-slate-50`;
+      : 'text-slate-800 border-slate-300 bg-white hover:bg-slate-50';
+
+  const subtleClass =
+    variant === 'danger'
+      ? 'text-red-600/85 border-transparent bg-transparent shadow-none hover:border-red-200/90 hover:bg-red-50/90 hover:text-red-700 focus-visible:ring-red-400/35'
+      : 'text-slate-500 border-transparent bg-transparent shadow-none hover:border-slate-200/80 hover:bg-slate-100/80 hover:text-slate-800 focus-visible:ring-slate-400/40';
+
+  const surfaceClass = tone === 'subtle' ? subtleClass : solidClass;
+  const paddingSize = tone === 'subtle' ? 'p-1.5' : 'p-2';
+  const rounding = tone === 'subtle' ? 'rounded-md' : 'rounded-lg';
+  const shadow = tone === 'subtle' ? '' : 'shadow-sm';
 
   const iconPath =
     icon === 'edit'
@@ -721,8 +751,11 @@ function ActionButton({
   return (
     <button
       type="button"
-      onClick={onClick}
-      className={`p-2 rounded-lg border shadow-sm transition-colors ${surfaceClass}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={`${paddingSize} ${rounding} border transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-0 ${shadow} ${surfaceClass}`}
       title={title}
       aria-label={title}
     >
