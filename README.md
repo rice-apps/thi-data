@@ -72,15 +72,40 @@ This command builds the required images, initializes all microservices, executes
 
 ## Technical Configuration
 
-Override Compose via repo-root **`.env`** or the shell (see **Environment variables**). Example:
+Compose substitutes values from the repo-root **`.env`** (from **`.env.example`**) and from your shell. The tables below list the most common host-visible settings, their defaults, and which part of the stack uses them. For full detail (Better Auth, client/server files, image build args), see **Environment variables** at the end of this document.
 
 ```bash
 PUBLIC_PORT=8080 DB_PORT=5433 make deploy
 ```
 
+### Network & routing
+
+| Variable | Component | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `PUBLIC_PORT` | Proxy | Host port mapped to nginx (website and same-origin `/api` in the browser). | `80` |
+| `API_SUBPATH` | Proxy / frontend / backend | URL prefix for the API (nginx strips this and forwards to FastAPI). | `/api` |
+| `API_PORT` | Backend | Port FastAPI listens on **inside** the backend container; nginx reaches the backend on this port. | `8000` |
+
+### Infrastructure ports (host)
+
+| Variable | Component | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `DB_PORT` | Postgres | Host port for the database (e.g. Power BI, tools on the machine). | `5432` |
+| `DB_NAME` | Postgres | Primary database name. | `postgres` |
+| `DB_USER` | Postgres | Database user. | `postgres` |
+| `DB_PASSWORD` | Postgres | Database password. | `password` |
+| `RABBITMQ_PORT` | RabbitMQ | Host port for AMQP. | `5672` |
+| `RABBITMQ_MGMT_PORT` | RabbitMQ | Host port for the management UI. | `15672` |
+| `STORAGE_S3_PORT` | SeaweedFS | Host port for S3-compatible access. | `8333` |
+
 ### Changing the public access port
 
-Set **`PUBLIC_PORT`** in **`.env`** (and align **`BETTER_AUTH_URL`** with the host/port users type in the browser), then **`make deploy`**.
+If port **80** is already in use, point the stack at a different host port:
+
+1. Open or create the repo-root **`.env`** (copy from **`.env.example`** if needed).
+2. Set **`PUBLIC_PORT`** (e.g. `PUBLIC_PORT=8080`). Compose maps **`${PUBLIC_PORT:-80}:80`** on the proxy service—you do not need to edit **`docker-compose.yml`** for this.
+3. Set **`BETTER_AUTH_URL`** to the URL users will type in the browser (include the non-default port), e.g. `http://localhost:8080` or `http://10.0.0.50:8080`.
+4. Run **`make deploy`** (or restart the stack) so containers pick up the new values.
 
 ---
 
