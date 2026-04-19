@@ -169,18 +169,24 @@ class TestTablesWithMetadata:
 class TestGetTableSchema:
 
     def test_schema_excludes_internal_columns(self):
+        from sqlalchemy import Integer, String
+
         app, _ = _make_app()
 
         mock_model = MagicMock()
         mapper = MagicMock()
         col_id = MagicMock()
         col_id.key = "id"
+        col_id.columns = [MagicMock(type=Integer())]
         col_rowid = MagicMock()
         col_rowid.key = "original_csv_row_id"
+        col_rowid.columns = [MagicMock(type=Integer())]
         col_name = MagicMock()
         col_name.key = "name"
+        col_name.columns = [MagicMock(type=String())]
         col_age = MagicMock()
         col_age.key = "age"
+        col_age.columns = [MagicMock(type=Integer())]
         mapper.column_attrs = [col_id, col_rowid, col_name, col_age]
 
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
@@ -191,10 +197,11 @@ class TestGetTableSchema:
 
         assert resp.status_code == 200
         columns = resp.json()["columns"]
-        assert "id" not in columns
-        assert "original_csv_row_id" not in columns
-        assert "name" in columns
-        assert "age" in columns
+        names = [c["name"] for c in columns]
+        assert "id" not in names
+        assert "original_csv_row_id" not in names
+        assert {"name": "name", "type": "String"} in columns
+        assert {"name": "age", "type": "Integer"} in columns
 
 
 # GET /api/get_size/{table_name} tests

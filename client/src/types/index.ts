@@ -32,6 +32,11 @@ export type PaginatedResponse<T> = {
   limit: number;
 };
 
+export type TableSchemaColumn = {
+  name: string;
+  type?: string;
+};
+
 export type TableSchemaResponse = {
-  columns: string[];
+  columns: TableSchemaColumn[];
 };

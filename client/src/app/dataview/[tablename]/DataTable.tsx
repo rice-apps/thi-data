@@ -10,13 +10,18 @@ import { Modal, ModalBody, ModalFooter } from '@/components/Modal';
 import { Button } from '@/components/Button';
 import { Spinner } from '@/components/Spinner';
 import { SearchInput } from '@/components/SearchInput';
-import type { TableRow, CellError, PaginationParams } from '@/types';
+import type {
+  TableRow,
+  CellError,
+  PaginationParams,
+  TableSchemaColumn,
+} from '@/types';
 import { formatValue } from '@/utils/formatters';
 
 type DataTableProps = {
   tablename: string;
   initialData: TableRow[];
-  columns: string[];
+  columns: TableSchemaColumn[];
 };
 
 function formValueToPayload(raw: unknown): string | number {
@@ -46,11 +51,15 @@ function rowMutationKey(row: TableRow): string | number | undefined {
   return undefined;
 }
 
-function payloadForColumns(columns: string[], formData: TableRow): TableRow {
+function payloadForColumns(
+  columns: TableSchemaColumn[],
+  formData: TableRow
+): TableRow {
   const payload: TableRow = {};
   for (const col of columns) {
-    if (PAYLOAD_SKIP_COLUMNS.has(col)) continue;
-    payload[col] = formValueToPayload(formData[col]);
+    const key = col.name;
+    if (PAYLOAD_SKIP_COLUMNS.has(key)) continue;
+    payload[key] = formValueToPayload(formData[key]);
   }
   return payload;
 }
@@ -83,8 +92,17 @@ export default function DataTable({
   const [initialLoading, setInitialLoading] = useState(false);
 
   const [search, setSearch] = useState('');
-  const [selectedColumn, setSelectedColumn] = useState(columns[0] || 'id');
+  const [selectedColumn, setSelectedColumn] = useState(
+    columns[0]?.name || 'id'
+  );
   const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(() => {
+    const names = columns.map((c) => c.name);
+    if (names.length > 0 && !names.includes(selectedColumn)) {
+      setSelectedColumn(names[0]);
+    }
+  }, [columns, selectedColumn]);
 
   const [modalState, setModalState] = useState<{
     type: 'add' | 'edit' | 'delete' | 'resolve' | null;
@@ -221,7 +239,7 @@ export default function DataTable({
 
   const handleAdd = () => {
     const emptyForm: TableRow = {};
-    columns.forEach((col) => (emptyForm[col] = ''));
+    columns.forEach((col) => (emptyForm[col.name] = ''));
     setFormData(emptyForm);
     setModalState({ type: 'add' });
   };
@@ -247,12 +265,14 @@ export default function DataTable({
 
   const handleAddSubmit = async () => {
     const emptyFields = columns.filter((col) => {
-      const val = formData[col];
+      const val = formData[col.name];
       return val === undefined || val === null || String(val).trim() === '';
     });
 
     if (emptyFields.length > 0) {
-      showError(`Please fill in all fields: ${emptyFields.join(', ')}`);
+      showError(
+        `Please fill in all fields: ${emptyFields.map((c) => c.name).join(', ')}`
+      );
       return;
     }
 
@@ -409,12 +429,17 @@ export default function DataTable({
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
-                  {columns.map((header) => (
+                  {columns.map(({ name, type }) => (
                     <th
-                      key={header}
-                      className="px-6 py-4 text-left text-sm font-semibold text-slate-600 whitespace-nowrap"
+                      key={name}
+                      className="px-6 py-4 text-left text-sm whitespace-nowrap align-bottom"
                     >
-                      {header}
+                      <div className="font-semibold text-slate-700">{name}</div>
+                      {type ? (
+                        <div className="text-xs font-normal text-slate-400 font-mono mt-0.5">
+                          {type}
+                        </div>
+                      ) : null}
                     </th>
                   ))}
                   <th className="px-6 py-4 text-right text-sm font-semibold text-slate-600 w-24">
@@ -448,12 +473,13 @@ export default function DataTable({
                         }`}
                       >
                         {columns.map((col, colIndex) => {
-                          const cellError = row._error_context?.[col];
+                          const key = col.name;
+                          const cellError = row._error_context?.[key];
                           const isCellCorrupted =
-                            isMissingForCorruptionCell(row[col]) && !!cellError;
+                            isMissingForCorruptionCell(row[key]) && !!cellError;
                           return (
                             <td
-                              key={col}
+                              key={key}
                               className={`px-6 py-4 text-sm whitespace-nowrap ${
                                 colIndex === 0 && isCorrupted
                                   ? 'border-l-4 border-l-red-400'
@@ -461,12 +487,12 @@ export default function DataTable({
                               } ${
                                 isCellCorrupted
                                   ? 'text-red-600'
-                                  : row[col] != null
+                                  : row[key] != null
                                     ? 'text-slate-700'
                                     : 'text-slate-400 italic'
                               }`}
                             >
-                              {renderCell(row, col)}
+                              {renderCell(row, key)}
                             </td>
                           );
                         })}
@@ -512,21 +538,28 @@ export default function DataTable({
         >
           <ModalBody className="space-y-4">
             {columns.map((col) => (
-              <div key={col}>
+              <div key={col.name}>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  {col} <span className="text-red-500">*</span>
+                  {col.name}
+                  {col.type ? (
+                    <span className="text-slate-400 font-normal">
+                      {' '}
+                      · {col.type}
+                    </span>
+                  ) : null}{' '}
+                  <span className="text-red-500">*</span>
                 </label>
                 <input
-                  value={String(formData[col] ?? '')}
+                  value={String(formData[col.name] ?? '')}
                   onChange={(e) =>
-                    setFormData({ ...formData, [col]: e.target.value })
+                    setFormData({ ...formData, [col.name]: e.target.value })
                   }
                   className={`w-full px-4 py-2 text-slate-700 bg-slate-50 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[${COLORS.PRIMARY}]/30 focus:border-[${COLORS.PRIMARY}] focus:bg-white transition-all duration-200 ${
-                    String(formData[col] ?? '').trim() === ''
+                    String(formData[col.name] ?? '').trim() === ''
                       ? 'border-red-300'
                       : 'border-slate-200'
                   }`}
-                  placeholder={`Enter ${col}`}
+                  placeholder={`Enter ${col.name}`}
                 />
               </div>
             ))}
@@ -585,7 +618,7 @@ function Header({
   onSearchChange,
 }: {
   tablename: string;
-  columns: string[];
+  columns: TableSchemaColumn[];
   selectedColumn: string;
   onColumnChange: (col: string) => void;
   search: string;
@@ -631,8 +664,8 @@ function Header({
               className={`appearance-none pl-3 pr-8 py-2.5 h-full text-sm bg-white border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-[${COLORS.PRIMARY}]/30 focus:border-[${COLORS.PRIMARY}] text-slate-700 cursor-pointer`}
             >
               {columns.map((col) => (
-                <option key={col} value={col}>
-                  {col}
+                <option key={col.name} value={col.name}>
+                  {col.type ? `${col.name} · ${col.type}` : col.name}
                 </option>
               ))}
             </select>
