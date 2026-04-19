@@ -59,7 +59,7 @@ class BaseRepository(Generic[ModelType]):
     def create(self, db: Session, obj_in: Dict[str, Any]) -> ModelType:
         db_obj = self.model(**obj_in)
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -74,14 +74,18 @@ class BaseRepository(Generic[ModelType]):
         if isinstance(obj_in, dict):
             update_data = obj_in
         else:
-            update_data = obj_in.dict(exclude_unset=True)
-        
+            update_data = (
+                obj_in.model_dump(exclude_unset=True)
+                if hasattr(obj_in, "model_dump")
+                else obj_in.dict(exclude_unset=True)
+            )
+
         for field in obj_data:
             if field in update_data:
                 setattr(db_obj, field, update_data[field])
-        
+
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -89,7 +93,7 @@ class BaseRepository(Generic[ModelType]):
         obj = self.get_by_id(db, id)
         if obj:
             db.delete(obj)
-            db.commit()
+            db.flush()
             return True
         return False
 
@@ -105,9 +109,9 @@ class BaseRepository(Generic[ModelType]):
                     setattr(item, key, value)
             db.add(item)
             updated_count += 1
-        
+
         if updated_count > 0:
-            db.commit()
+            db.flush()
         return updated_count
 
     def delete_by_field(self, db: Session, field_name: str, value: Any) -> int:
@@ -119,9 +123,9 @@ class BaseRepository(Generic[ModelType]):
         for item in items:
             db.delete(item)
             deleted_count += 1
-        
+
         if deleted_count > 0:
-            db.commit()
+            db.flush()
         return deleted_count
 
     def get_by_date_range(

@@ -8,7 +8,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
 
-from core.deps import get_db
+from core.deps import get_db_context
 import core.database as db_module
 from core.database import reflect_db
 from core.enums import FileStatus
@@ -22,30 +22,30 @@ def setup_file_registry():
     if not FileRegistry:
        pytest.fail("File registry not found in database.")
 
-    db = next(get_db())
     file_id = str(uuid.uuid4())
     object_key = f"uploads/{file_id}-testfile.csv"
 
-    created_record = BaseRepository(FileRegistry).create(db = db, obj_in = {
-            "file_id": file_id,
-            "object_key": object_key,
-            "status": FileStatus.UPLOADED
-        },
-    )
-    db.commit()
-    
+    with get_db_context() as db:
+        BaseRepository(FileRegistry).create(
+            db=db,
+            obj_in={
+                "file_id": file_id,
+                "object_key": object_key,
+                "status": FileStatus.UPLOADED,
+            },
+        )
+
     yield file_id, object_key
 
     try:
-        BaseRepository(FileRegistry).delete_by_field(
-            db=db,
-            field_name="file_id",
-            value=file_id,
-        )
-        db.commit()
+        with get_db_context() as db:
+            BaseRepository(FileRegistry).delete_by_field(
+                db=db,
+                field_name="file_id",
+                value=file_id,
+            )
     except Exception as e:
         print(f"Error cleaning up file record: {e}")
-    db.close()
 
 def test_update_file_registry(setup_file_registry):
     file_id, _ = setup_file_registry
@@ -68,9 +68,8 @@ def test_delete_file_registry(setup_file_registry):
 
     reflect_db()
     FileRegistry = db_module.Base.classes.get("file_registry")
-    db = next(get_db())
-    records = BaseRepository(FileRegistry).get_by_field(db, field_name="file_id", value=file_id)
-    db.close()
+    with get_db_context() as db:
+        records = BaseRepository(FileRegistry).get_by_field(db, field_name="file_id", value=file_id)
     assert len(records) == 0
 
 def test_delete_file_verifies_storage_cleanup():

@@ -7,7 +7,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
 
-from core.deps import get_db, get_model_class
+from core.deps import get_db_context, get_model_class
 import core.database as db_module
 from core.database import reflect_db
 from crud.base import BaseRepository, model_to_dict
@@ -28,33 +28,24 @@ def setup_item():
     if not model_class:
         pytest.fail(f"Test setup failed: Could not find model for table '{TABLE}'")
 
-    db = next(get_db())
     new_item_data = {
         "first_name": EXAMPLE_FIRST_NAME,
         "last_name": EXAMPLE_LAST_NAME,
         "age": EXAMPLE_AGE
     }
 
-    created_item = None
-    try:
-        # Create the test item
+    item_id = None
+    with get_db_context() as db:
         created_item = BaseRepository(model_class).create(db, new_item_data)
-        db.commit()
-        db.refresh(created_item)
         item_id = created_item.id
-        
-        yield item_id
-    
-    finally:
-        # Tear down: Clean up the database
-        if created_item:
-            try:
-                BaseRepository(model_class).delete(db, created_item.id)
-                db.commit()
-            except Exception as e:
-                db.rollback()
-                print(f"Error during test teardown: {e}")
-        db.close()
+
+    yield item_id
+
+    try:
+        with get_db_context() as db:
+            BaseRepository(model_class).delete(db, item_id)
+    except Exception as e:
+        print(f"Error during test teardown: {e}")
 
 @pytest.fixture(scope="function")
 def setup_metadata_creation():
@@ -64,31 +55,22 @@ def setup_metadata_creation():
     if not model_class:
         pytest.fail(f"Test setup failed: Could not find model for table '{METADATA_CREATION_TABLE}'")
 
-    db = next(get_db())
     new_item_data = {
-            "created_by": "fixture_tester",
-            "table_name": "fixture_test_table"
-        }
-    created_item = None
-    try:
-        # Create metadata creation record
+        "created_by": "fixture_tester",
+        "table_name": "fixture_test_table"
+    }
+    item_id = None
+    with get_db_context() as db:
         created_item = BaseRepository(model_class).create(db, new_item_data)
-        db.commit()
-        db.refresh(created_item)
         item_id = created_item.id
-        
-        yield item_id
-    
-    finally:
-        # Tear down: Clean up the database
-        if created_item:
-            try:
-                BaseRepository(model_class).delete(db, created_item.id)
-                db.commit()
-            except Exception as e:
-                db.rollback()
-                print(f"Error during metadata_creation fixture teardown: {e}")
-        db.close()
+
+    yield item_id
+
+    try:
+        with get_db_context() as db:
+            BaseRepository(model_class).delete(db, item_id)
+    except Exception as e:
+        print(f"Error during metadata_creation fixture teardown: {e}")
 
 def test_get_tables():
     r = requests.get(f"{API_URL}/api/tables")
@@ -132,8 +114,6 @@ def test_create_item():
     model_class = get_model_class(TABLE)
     if not model_class:
         pytest.fail(f"Test setup failed: Could not find model for table '{TABLE}'")
-    db = next(get_db())
-    
     try:
         r = requests.post(f"{API_URL}/api/{TABLE}", json=new_item)
         assert r.status_code == 200
@@ -141,20 +121,18 @@ def test_create_item():
             data = r.json()
         except requests.JSONDecodeError:
             assert False, "Response is not valid JSON"
-        
+
         item_id = data.get("id")
 
         assert isinstance(data, dict), "Response should be a dictionary."
         for key in ["id", "first_name", "last_name", "age"]:
             assert key in data, f"Response should contain the key '{key}'."
     finally:
-        # Teardown: Clean up the item this test created
         if item_id:
             try:
-                BaseRepository(model_class).delete(db, item_id)
-                db.commit()
+                with get_db_context() as db:
+                    BaseRepository(model_class).delete(db, item_id)
             except Exception as e:
-                db.rollback()
                 print(f"Error during test_create_item teardown: {e}")
 
 
@@ -200,37 +178,27 @@ def test_delete_item():
 
     if not model_class:
         pytest.fail(f"Test setup failed: Could not find model for table '{TABLE}'")
-    db = next(get_db())
     new_item_data = {
         "first_name": "Item",
         "last_name": "To-Be-Deleted",
         "age": 123
     }
-    created_item = None
     item_id = None
 
     try:
-        created_item = BaseRepository(model_class).create(db, new_item_data)
-        db.commit()
-        db.refresh(created_item)
-        item_id = created_item.id
+        with get_db_context() as db:
+            created_item = BaseRepository(model_class).create(db, new_item_data)
+            item_id = created_item.id
     except Exception as e:
-        db.rollback()
-        db.close()
         pytest.fail(f"Test setup for test_delete_item failed: {e}")
-    
-    # Run the test
+
     r = requests.delete(f"{API_URL}/api/{TABLE}/{item_id}")
 
     assert r.status_code == 200
-    
-    # Close setup session and open a fresh one to avoid isolation/caching issues
-    db.close()
-    db = next(get_db())
 
-    item = BaseRepository(model_class).get_by_id(db, item_id)
+    with get_db_context() as db:
+        item = BaseRepository(model_class).get_by_id(db, item_id)
     assert item is None
-    db.close()
 
 def test_metadata_creation():
     new_metadata = {
@@ -258,8 +226,7 @@ def test_metadata_update(setup_metadata_creation):
     update_item_id = None
     reflect_db()
     update_model_class = db_module.Base.classes.get(METADATA_UPDATE_TABLE)
-    db = next(get_db())
-    
+
     if not update_model_class:
         pytest.fail(f"Test setup failed: Could not find model for '{METADATA_UPDATE_TABLE}'")
 
@@ -270,22 +237,20 @@ def test_metadata_update(setup_metadata_creation):
             data = r.json()
         except requests.JSONDecodeError:
             assert False, "Response is not valid JSON"
-        
+
         update_item_id = data.get("id")
 
         assert isinstance(data, dict), "Response should be a dictionary."
         for key in ["id", "updated_by", "foreign_key"]:
             assert key in data, f"Response should contain the key '{key}'."
-        
+
         assert data["foreign_key"] == str(creation_id)
         assert data["updated_by"] == "tester"
 
     finally:
         if update_item_id:
             try:
-                BaseRepository(update_model_class).delete(db, update_item_id)
-                db.commit()
+                with get_db_context() as db:
+                    BaseRepository(update_model_class).delete(db, update_item_id)
             except Exception as e:
-                db.rollback()
                 print(f"Error during test_metadata_update teardown: {e}")
-        db.close()

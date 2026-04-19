@@ -6,9 +6,11 @@ from sqlalchemy.pool import NullPool
 import logging
 import time
 from .config import settings
-from sqlalchemy_dlock.factory import create_sadlock 
+from sqlalchemy_dlock.factory import create_sadlock
 
-logging.basicConfig()
+from core.logging_config import configure_logging
+
+configure_logging()
 logger = logging.getLogger("sqlalchemy.engine")
 logger.setLevel(logging.INFO)
 

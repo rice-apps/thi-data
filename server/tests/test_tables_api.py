@@ -21,7 +21,7 @@ def _make_app():
 
     mock_db = MagicMock()
 
-    def override_get_db():
+    async def override_get_db():
         yield mock_db
 
     app.dependency_overrides[get_db] = override_get_db

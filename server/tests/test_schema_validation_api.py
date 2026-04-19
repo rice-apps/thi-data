@@ -139,7 +139,7 @@ class TestProcessFileEndpoint:
         mock_db = MagicMock()
         mock_db.execute.return_value = MagicMock(rowcount=1)
 
-        def override_get_db():
+        async def override_get_db():
             yield mock_db
 
         app.dependency_overrides[get_db] = override_get_db
@@ -187,7 +187,10 @@ class TestProcessFileEndpoint:
 
         mock_db = MagicMock()
         mock_db.execute.return_value = MagicMock(rowcount=0)
-        app.dependency_overrides[get_db] = lambda: (yield mock_db) or None
+        async def override_get_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db] = override_get_db
 
         client = TestClient(app)
 
@@ -223,7 +226,7 @@ class TestValidateSchemaEndpoint:
         mock_storage = MagicMock()
         mock_storage.get_file_path.return_value = Path("/tmp/test.csv")
 
-        def override_get_db():
+        async def override_get_db():
             yield mock_db
 
         app.dependency_overrides[get_db] = override_get_db
@@ -276,7 +279,11 @@ class TestValidateSchemaEndpoint:
         app.include_router(router)
 
         mock_db = MagicMock()
-        app.dependency_overrides[get_db] = lambda: (yield mock_db) or None
+
+        async def override_get_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db] = override_get_db
         app.dependency_overrides[get_storage_provider] = lambda: MagicMock()
 
         client = TestClient(app)
@@ -302,8 +309,10 @@ class TestValidateSchemaEndpoint:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_storage = MagicMock()
@@ -333,8 +342,10 @@ class TestValidateSchemaEndpoint:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_storage = MagicMock()
@@ -476,8 +487,10 @@ class TestErrorSanitization:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_storage = MagicMock()
@@ -514,8 +527,10 @@ class TestErrorSanitization:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_storage = MagicMock()
@@ -543,8 +558,10 @@ class TestErrorSanitization:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_model = MagicMock()
@@ -580,8 +597,10 @@ class TestErrorSanitization:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_model = MagicMock()
@@ -611,8 +630,10 @@ class TestErrorSanitization:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_model = MagicMock()

@@ -1,4 +1,4 @@
-from typing import Generator, Any, Optional, Dict
+from typing import AsyncGenerator, Any, Optional, Dict
 from contextlib import contextmanager
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -68,12 +68,15 @@ def init_app_services(storage_provider: StorageProvider = None) -> None:
         else:
             _storage_instance = FakeS3()
 
-def get_db() -> Generator[Session, None, None]:
+async def get_db() -> AsyncGenerator[Session, None]:
     """
-    Provides a transactional database session.
-    
-    - Auto-commits on successful request completion.
-    - Auto-rollbacks on any unhandled exception.
+    Request-scoped SQLAlchemy session for FastAPI.
+
+    Implemented as an **async** generator so teardown (commit/close) runs in the
+    same async task *after* the route coroutine finishes—including any ``await``
+    in ``async def`` handlers. A synchronous ``yield``-style dependency can run
+    its exit code too early for async routes, so a flush-only repository layer
+    would never get an outer commit and other HTTP requests would not see writes.
     """
     db = SessionLocal()
     try:
