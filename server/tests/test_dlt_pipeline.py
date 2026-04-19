@@ -4,11 +4,11 @@ Unit tests for server/services/dlt_pipeline.py — schema creation and pipeline 
 All tests use mocked dependencies (no live DLT/Postgres).
 """
 
-from unittest.mock import patch, MagicMock, call
-from sqlalchemy import text
+from unittest.mock import patch, MagicMock
 
 import sys
 import pytest
+from services.column_typing import normalize_duckdb_type
 
 @pytest.fixture(autouse=True)
 def restore_dlt_module():
@@ -19,7 +19,7 @@ class TestDLTPipelineSchemaCreation:
     @patch("services.dlt_pipeline.dlt")
     @patch("services.dlt_pipeline.engine")
     def test_schema_created_before_pipeline_run(self, mock_engine, mock_dlt):
-        """CREATE SCHEMA IF NOT EXISTS is executed before the DLT pipeline is created."""
+        """Schema is ensured and prior destination tables dropped before DLT runs."""
         from services.dlt_pipeline import DLTPipeline
 
         mock_conn = MagicMock()
@@ -36,8 +36,15 @@ class TestDLTPipelineSchemaCreation:
         pipeline = DLTPipeline(dataset_name="test_schema")
         pipeline.load_to_postgres(con, target_table_name="test_table")
 
-        executed_sql = str(mock_conn.execute.call_args[0][0].text)
-        assert "CREATE SCHEMA IF NOT EXISTS test_schema" in executed_sql
+        sqls = [str(c[0][0].text) for c in mock_conn.execute.call_args_list]
+        assert any("CREATE SCHEMA IF NOT EXISTS \"test_schema\"" in s for s in sqls)
+        assert any(
+            "DROP TABLE IF EXISTS \"test_schema\".\"test_table\" CASCADE" in s for s in sqls
+        )
+        assert any(
+            "DROP TABLE IF EXISTS \"test_schema\".\"test_table__corrupted\" CASCADE" in s
+            for s in sqls
+        )
 
     @patch("services.dlt_pipeline.dlt")
     @patch("services.dlt_pipeline.engine")
@@ -67,3 +74,14 @@ class TestDLTPipelineSchemaCreation:
         assert name1.startswith("duckdb_to_postgres_")
         assert name2.startswith("duckdb_to_postgres_")
         assert name1 != name2
+
+
+class TestNormalizeDuckdbType:
+    def test_aliases_map_to_primitives(self):
+        assert normalize_duckdb_type("FLOAT") == "DOUBLE"
+        assert normalize_duckdb_type("INT") == "INTEGER"
+        assert normalize_duckdb_type("STRING") == "VARCHAR"
+
+    def test_unknown_falls_back_to_varchar(self):
+        assert normalize_duckdb_type("DECIMAL(10,2)") == "VARCHAR"
+        assert normalize_duckdb_type("") == "VARCHAR"

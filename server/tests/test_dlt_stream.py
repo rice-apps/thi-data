@@ -3,7 +3,7 @@ Unit tests for the dlt stream / load logic.
 
 Tests Arrow table extraction from DuckDB, pipeline invocation, schema
 evolution conflicts, Celery task failure handling on network errors,
-and Arrow-to-Postgres type coercion.
+and DLT pipeline wiring.
 
 All tests are self-contained — they mock dlt, Celery, and Postgres so
 no live services are required.
@@ -14,6 +14,7 @@ import os
 import sys
 import pytest
 from unittest.mock import patch, MagicMock
+from celery.exceptions import MaxRetriesExceededError
 
 import duckdb
 import pyarrow as pa
@@ -321,11 +322,15 @@ class TestNetworkFailurePersistence:
                 "connection to server timed out"
             )
 
-            # Call the underlying run method directly to bypass autoretry.
-            with pytest.raises(ConnectionError, match="timed out"):
-                process_patient_file._orig_run(
-                    "file-123", {"age": "INTEGER"}
-                )
+            with patch.object(
+                process_patient_file,
+                "retry",
+                side_effect=MaxRetriesExceededError(),
+            ):
+                with pytest.raises(ConnectionError, match="timed out"):
+                    process_patient_file.run(
+                        "file-123", {"age": "INTEGER"}
+                    )
 
         # Status should have been set to FAILED
         mock_update_status.assert_any_call(
@@ -368,10 +373,15 @@ class TestNetworkFailurePersistence:
 
             mock_process.side_effect = RuntimeError("disk full")
 
-            with pytest.raises(RuntimeError):
-                process_patient_file._orig_run(
-                    "file-456", {"id": "INTEGER"}
-                )
+            with patch.object(
+                process_patient_file,
+                "retry",
+                side_effect=MaxRetriesExceededError(),
+            ):
+                with pytest.raises(RuntimeError):
+                    process_patient_file.run(
+                        "file-456", {"id": "INTEGER"}
+                    )
 
         # Extract the status values in order
         status_calls = [
@@ -381,12 +391,11 @@ class TestNetworkFailurePersistence:
         assert status_calls[-1] == "FAILED"
 
     def test_celery_task_has_retry_config(self):
-        """Verify the task decorator configures auto-retry correctly."""
+        """Verify the task uses explicit self.retry (no autoretry_for on the decorator)."""
         from celery_task import process_patient_file
 
         assert process_patient_file.max_retries == 3
-        assert process_patient_file.autoretry_for == (Exception,)
-        assert process_patient_file.retry_backoff is True
+        assert not getattr(process_patient_file, "autoretry_for", None)
 
     @patch("celery_task.notify_frontend")
     @patch("celery_task._refresh_api_server")
@@ -432,7 +441,7 @@ class TestNetworkFailurePersistence:
             mock_get_storage.return_value = mock_storage
             mock_process.return_value = 0
 
-            result = process_patient_file._orig_run(
+            result = process_patient_file.run(
                 "file-ok", {"name": "VARCHAR"}
             )
 
@@ -495,10 +504,15 @@ class TestNetworkFailurePersistence:
 
             mock_refresh.side_effect = RuntimeError("API server unreachable")
 
-            with pytest.raises(RuntimeError, match="API server unreachable"):
-                process_patient_file._orig_run(
-                    "file-no-refresh", {"age": "INTEGER"}
-                )
+            with patch.object(
+                process_patient_file,
+                "retry",
+                side_effect=MaxRetriesExceededError(),
+            ):
+                with pytest.raises(RuntimeError, match="API server unreachable"):
+                    process_patient_file.run(
+                        "file-no-refresh", {"age": "INTEGER"}
+                    )
 
         # A failure notification IS sent (correct behavior) but NO success notification
         assert mock_notify.call_count == 1
@@ -551,10 +565,15 @@ class TestNetworkFailurePersistence:
             # Notification also fails
             mock_notify.side_effect = ConnectionError("pg down")
 
-            with pytest.raises(ValueError, match="bad data"):
-                process_patient_file._orig_run(
-                    "file-double-fail", {"id": "INTEGER"}
-                )
+            with patch.object(
+                process_patient_file,
+                "retry",
+                side_effect=MaxRetriesExceededError(),
+            ):
+                with pytest.raises(ValueError, match="bad data"):
+                    process_patient_file.run(
+                        "file-double-fail", {"id": "INTEGER"}
+                    )
 
         # The notification was attempted but its error was swallowed
         mock_notify.assert_called_once()

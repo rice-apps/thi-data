@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.exceptions import MaxRetriesExceededError
 from typing import Union
 
 import core.config as config
@@ -71,7 +72,7 @@ def update_file_status(file_id: str, status: Union[FileStatus, str], error_messa
             update_data=update_data
         )
 
-@app.task(bind=True, acks_late=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
+@app.task(bind=True, acks_late=True, max_retries=3)
 def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
     """
     Celery task to process a patient data file.
@@ -163,16 +164,21 @@ def process_patient_file(self, file_id: str, proposed_schema: dict) -> dict:
         return {"file_id": file_id, "status": FileStatus.FAILED, "error": str(e)}
 
     except Exception as e:
-        # Potentially transient (network, DB connection) — autoretry will retry.
         logger.error(f"Task failed for file_id {file_id}: {e}", exc_info=True)
-        update_file_status(file_id, FileStatus.FAILED, error_message=str(e))
         try:
-            notify_frontend({
-                "type": "celery_failed",
-                "file_id": file_id,
-                "message": "Processing failed",
-                "error": str(e),
-            })
-        except Exception as notify_err:
-            logging.warning(f"Failed to send failure event for {file_id}: {notify_err}")
-        raise
+            raise self.retry(
+                exc=e,
+                countdown=min(120, 2 ** self.request.retries),
+            )
+        except MaxRetriesExceededError:
+            update_file_status(file_id, FileStatus.FAILED, error_message=str(e))
+            try:
+                notify_frontend({
+                    "type": "celery_failed",
+                    "file_id": file_id,
+                    "message": "Processing failed",
+                    "error": str(e),
+                })
+            except Exception as notify_err:
+                logging.warning(f"Failed to send failure event for {file_id}: {notify_err}")
+            raise e

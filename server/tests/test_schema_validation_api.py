@@ -137,6 +137,7 @@ class TestProcessFileEndpoint:
         app.include_router(router)
 
         mock_db = MagicMock()
+        mock_db.execute.return_value = MagicMock(rowcount=1)
 
         def override_get_db():
             yield mock_db
@@ -185,6 +186,7 @@ class TestProcessFileEndpoint:
         app.include_router(router)
 
         mock_db = MagicMock()
+        mock_db.execute.return_value = MagicMock(rowcount=0)
         app.dependency_overrides[get_db] = lambda: (yield mock_db) or None
 
         client = TestClient(app)

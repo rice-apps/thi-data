@@ -119,6 +119,14 @@ class TestTryCastValidation:
 
         validate_and_split_data(duckdb_con, schema_map)
 
+        describe = {
+            row[0]: str(row[1]).upper()
+            for row in duckdb_con.execute(f"DESCRIBE {CLEAN_DATA_NAME}").fetchall()
+        }
+        assert describe["original_csv_row_id"].startswith("BIGINT")
+        assert "VARCHAR" in describe["name"]
+        assert describe["score"].startswith("INTEGER")
+
         # Clean data should have ALL 3 rows (Bob's score is NULL via TRY_CAST)
         clean = duckdb_con.execute(
             f"SELECT name, score FROM {CLEAN_DATA_NAME} ORDER BY name"
@@ -238,6 +246,33 @@ class TestTryCastValidation:
         assert corrupted[0][1] == "HIGH"
         # Standard error reason should be applied
         assert corrupted[0][2] == "Validation Failed"
+
+    def test_unparseable_double_string_null_in_clean_and_corrupted_sidecar(self, duckdb_con):
+        columns = ["row_label", "balance"]
+        rows = [
+            ("a", "1.5"),
+            ("b", "one thousand"),
+            ("c", None),
+        ]
+        seed_raw_table(duckdb_con, columns, rows)
+        schema_map = {"row_label": "VARCHAR", "balance": "DOUBLE"}
+
+        error_count = validate_and_split_data(duckdb_con, schema_map)
+
+        assert error_count == 1
+        clean = duckdb_con.execute(
+            f"SELECT row_label, balance FROM {CLEAN_DATA_NAME} ORDER BY row_label"
+        ).fetchall()
+        assert clean[0] == ("a", 1.5)
+        assert clean[1] == ("b", None)
+        assert clean[2] == ("c", None)
+
+        corrupted = duckdb_con.execute(
+            f"SELECT row_label, balance FROM {CORRUPTED_ROWS_NAME}"
+        ).fetchall()
+        assert len(corrupted) == 1
+        assert corrupted[0][0] == "b"
+        assert corrupted[0][1] == "one thousand"
 
 
 # Memory Resilience tests

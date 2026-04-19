@@ -1,5 +1,7 @@
 import duckdb
 import os
+from dlt.pipeline.exceptions import PipelineStepFailed
+from services.column_typing import normalize_duckdb_type, quote_column_id
 from services.dlt_pipeline import DLTPipeline
 from services.dlt_pipeline import CORRUPTED_ROWS_NAME, RAW_DATA_NAME, CLEAN_DATA_NAME
 from services.file_loaders import create_raw_table
@@ -55,6 +57,12 @@ def process_file(file_path: str, proposed_schema: dict, target_table_name: str =
         return error_count
     except ETLError:
         raise
+    except PipelineStepFailed as e:
+        logger.error("DLT load failed: %s", e, exc_info=True)
+        raise ETLError(
+            "Could not load data into the warehouse. If this persists, check column types "
+            "and file contents, or contact support."
+        ) from e
     except duckdb.Error as e:
         logger.error(f"DuckDB error during processing: {e}", exc_info=True)
         raise ETLError(
@@ -101,10 +109,13 @@ def _validate_and_split_data(con, schema_map):
     logger.debug(f"Schema map: {schema_map}")
     columns_sql = []
     error_conditions = []
-    for col_name, target_type in schema_map.items():
-        q = f'"{col_name}"'
-        columns_sql.append(f"TRY_CAST({q} AS {target_type}) AS {q}")
-        error_conditions.append(f"({q} IS NOT NULL AND TRY_CAST({q} AS {target_type}) IS NULL)")
+    col_defs = ["original_csv_row_id BIGINT"]
+    for col_name, user_type in schema_map.items():
+        q = quote_column_id(col_name)
+        dt = normalize_duckdb_type(user_type)
+        columns_sql.append(f"TRY_CAST({q} AS {dt}) AS {q}")
+        error_conditions.append(f"({q} IS NOT NULL AND TRY_CAST({q} AS {dt}) IS NULL)")
+        col_defs.append(f"{q} {dt}")
     where_clause = " OR ".join(error_conditions)
     logger.debug(f"Generated {len(columns_sql)} column casts and {len(error_conditions)} error conditions")
 
@@ -116,14 +127,19 @@ def _validate_and_split_data(con, schema_map):
         WHERE {where_clause}
     """)
     select_clause = ", ".join(columns_sql)
+    col_def_clause = ",\n            ".join(col_defs)
 
-    # Exclude rows where every raw value is NULL or empty (truly blank rows)
     all_blank_parts = [f'("{col}" IS NULL OR TRIM("{col}") = \'\')' for col in schema_map]
     all_blank_condition = " AND ".join(all_blank_parts)
 
     logger.info("Creating clean data table")
     con.execute(f"""
-        CREATE TABLE {CLEAN_DATA_NAME} AS
+        CREATE TABLE {CLEAN_DATA_NAME} (
+            {col_def_clause}
+        )
+    """)
+    con.execute(f"""
+        INSERT INTO {CLEAN_DATA_NAME}
         SELECT rowid AS original_csv_row_id, {select_clause}
         FROM {RAW_DATA_NAME}
         WHERE NOT ({all_blank_condition})

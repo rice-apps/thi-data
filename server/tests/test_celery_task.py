@@ -8,6 +8,7 @@ All tests mock external dependencies (no live Celery/Postgres/HTTP).
 import pytest
 from unittest.mock import patch, MagicMock, call
 from contextlib import contextmanager
+from celery.exceptions import MaxRetriesExceededError
 
 
 # Test helpers
@@ -64,7 +65,7 @@ class TestProcessPatientFile:
 
         with patch("celery_task.get_file_registry_repo") as mock_get_repo:
             _setup_mocks(mock_get_db_ctx, mock_get_storage, mock_get_repo)
-            result = process_patient_file._orig_run("file-1", {"age": "INTEGER"})
+            result = process_patient_file.run("file-1", {"age": "INTEGER"})
 
         assert result["status"] == "SUCCESS"
         assert result["file_id"] == "file-1"
@@ -96,7 +97,7 @@ class TestProcessPatientFile:
             mock_get_repo.return_value = mock_repo
 
             with pytest.raises(ValueError, match="not found in registry"):
-                process_patient_file._orig_run("missing-id", {"a": "VARCHAR"})
+                process_patient_file.run("missing-id", {"a": "VARCHAR"})
 
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
@@ -123,8 +124,13 @@ class TestProcessPatientFile:
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
 
-            with pytest.raises(FileNotFoundError, match="Could not resolve"):
-                process_patient_file._orig_run("file-2", {"a": "VARCHAR"})
+            with patch.object(
+                process_patient_file,
+                "retry",
+                side_effect=MaxRetriesExceededError(),
+            ):
+                with pytest.raises(FileNotFoundError, match="Could not resolve"):
+                    process_patient_file.run("file-2", {"a": "VARCHAR"})
 
     @patch("celery_task.notify_frontend")
     @patch("celery_task.get_storage_provider")
@@ -142,8 +148,13 @@ class TestProcessPatientFile:
         with patch("celery_task.get_file_registry_repo") as mock_get_repo:
             _setup_mocks(mock_get_db_ctx, mock_get_storage, mock_get_repo)
 
-            with pytest.raises(RuntimeError, match="ETL crashed"):
-                process_patient_file._orig_run("file-3", {"a": "VARCHAR"})
+            with patch.object(
+                process_patient_file,
+                "retry",
+                side_effect=MaxRetriesExceededError(),
+            ):
+                with pytest.raises(RuntimeError, match="ETL crashed"):
+                    process_patient_file.run("file-3", {"a": "VARCHAR"})
 
         mock_update_status.assert_any_call(
             "file-3", "FAILED", error_message="ETL crashed"
@@ -185,7 +196,7 @@ class TestProcessPatientFile:
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
 
-            process_patient_file._orig_run("file-4", {"a": "VARCHAR"})
+            process_patient_file.run("file-4", {"a": "VARCHAR"})
 
         mock_storage.delete_file.assert_called_once_with("uploads/test.csv")
         mock_path.unlink.assert_called_once()
@@ -225,7 +236,7 @@ class TestProcessPatientFile:
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
 
-            result = process_patient_file._orig_run("file-5", {"a": "VARCHAR"})
+            result = process_patient_file.run("file-5", {"a": "VARCHAR"})
 
         # Should still succeed despite cleanup failure
         assert result["status"] == "SUCCESS"
@@ -413,7 +424,7 @@ class TestMetadataCreation:
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
 
-            result = process_patient_file._orig_run("file-meta", {"a": "VARCHAR"})
+            result = process_patient_file.run("file-meta", {"a": "VARCHAR"})
 
         assert result["status"] == "SUCCESS"
         mock_get_model.assert_called_once_with("metadata_creation")
@@ -443,7 +454,7 @@ class TestMetadataCreation:
         with patch("celery_task.get_file_registry_repo") as mock_get_repo:
             _setup_mocks(mock_get_db_ctx, mock_get_storage, mock_get_repo)
 
-            result = process_patient_file._orig_run("file-meta-fail", {"a": "VARCHAR"})
+            result = process_patient_file.run("file-meta-fail", {"a": "VARCHAR"})
 
         assert result["status"] == "SUCCESS"
         mock_refresh.assert_called_once()
@@ -482,7 +493,7 @@ class TestMetadataCreation:
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
 
-            process_patient_file._orig_run("file-anon", {"a": "VARCHAR"})
+            process_patient_file.run("file-anon", {"a": "VARCHAR"})
 
         # When uploaded_by is None, falls back to "unknown"
         mock_meta_cls.assert_called_once_with(table_name="patient_data", created_by="unknown")

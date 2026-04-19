@@ -5,6 +5,7 @@ import re
 import uuid
 
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 import logging
 
 from core.deps import get_db, get_storage_provider, get_file_registry_repo
@@ -153,6 +154,26 @@ class ProcessFileRequest(BaseModel):
     proposed_schema: Dict[str, str]
 
 
+def _claim_file_for_processing(db: Session, file_id: str) -> int:
+    q = text(
+        """
+        UPDATE public.file_registry
+        SET status = :processing, error_message = NULL
+        WHERE file_id = CAST(:file_id AS uuid)
+          AND (status = :s_confirmed OR status = :s_failed)
+        """
+    )
+    return db.execute(
+        q,
+        {
+            "processing": FileStatus.PROCESSING.value,
+            "file_id": file_id,
+            "s_confirmed": FileStatus.SCHEMA_CONFIRMED.value,
+            "s_failed": FileStatus.FAILED.value,
+        },
+    ).rowcount
+
+
 @router.post("/api/files/{file_id}/process")
 def process_file(
     file_id: str,
@@ -161,6 +182,10 @@ def process_file(
     repo: BaseRepository = Depends(get_file_registry_repo),
 ):
     """Queue async ETL via Celery using the user-confirmed schema."""
+    if _claim_file_for_processing(db, file_id) == 1:
+        task = process_patient_file.delay(file_id, body.proposed_schema)
+        return {"file_id": file_id, "task_id": task.id, "status": "PROCESSING"}
+
     file_records = repo.get_by_field(
         db=db,
         field_name="file_id",
@@ -168,6 +193,8 @@ def process_file(
     )
     if not file_records:
         raise HTTPException(status_code=404, detail="File not found in registry")
-
-    task = process_patient_file.delay(file_id, body.proposed_schema)
-    return {"file_id": file_id, "task_id": task.id, "status": "PROCESSING"}
+    st = file_records[0].status
+    raise HTTPException(
+        status_code=409,
+        detail=f"File is not eligible for processing (current status: {st})",
+    )
