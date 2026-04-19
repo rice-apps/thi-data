@@ -1,15 +1,7 @@
-import { createClient } from '@/utils/supabase/server';
-import { User } from '@supabase/supabase-js';
+import { headers } from 'next/headers';
+import { auth } from '@/lib/auth';
 
-export async function loginResult(): Promise<User | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  // Middleware handles authentication, but we still check for safety
-  if (!user) {
-    return null;
-  }
-  return user;
+export async function loginResult() {
+  const session = await auth.api.getSession({ headers: await headers() });
+  return session?.user ?? null;
 }

@@ -8,7 +8,15 @@ UNLISTED_TABLES = [
     "test_database", 
     "thi_database", 
     "test_data", 
-    "test_data_corrupted"
+    "test_data_corrupted",
+    "account",
+    "verification",
+    "session",
+    "user",
+    '"account"',
+    '"verification"',
+    '"session"',
+    '"user"',
 ]
 
 # Suffixes that mark internal tables

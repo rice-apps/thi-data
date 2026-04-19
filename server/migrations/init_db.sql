@@ -53,3 +53,51 @@ CREATE TABLE IF NOT EXISTS public.thi_database (
   age integer,
   CONSTRAINT thi_database_pkey PRIMARY KEY (id)
 );
+
+-- Better Auth core schema. Quoted identifiers are required: "user" is reserved,
+-- and all columns use camelCase to match the library's default Kysely mappings.
+CREATE TABLE IF NOT EXISTS public."user" (
+  "id" text PRIMARY KEY,
+  "name" text NOT NULL,
+  "email" text NOT NULL UNIQUE,
+  "emailVerified" boolean NOT NULL DEFAULT false,
+  "image" text,
+  "createdAt" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public."session" (
+  "id" text PRIMARY KEY,
+  "expiresAt" timestamp NOT NULL,
+  "token" text NOT NULL UNIQUE,
+  "createdAt" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "ipAddress" text,
+  "userAgent" text,
+  "userId" text NOT NULL REFERENCES public."user"("id") ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS public."account" (
+  "id" text PRIMARY KEY,
+  "accountId" text NOT NULL,
+  "providerId" text NOT NULL,
+  "userId" text NOT NULL REFERENCES public."user"("id") ON DELETE CASCADE,
+  "accessToken" text,
+  "refreshToken" text,
+  "idToken" text,
+  "accessTokenExpiresAt" timestamp,
+  "refreshTokenExpiresAt" timestamp,
+  "scope" text,
+  "password" text,
+  "createdAt" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public."verification" (
+  "id" text PRIMARY KEY,
+  "identifier" text NOT NULL,
+  "value" text NOT NULL,
+  "expiresAt" timestamp NOT NULL,
+  "createdAt" timestamp DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" timestamp DEFAULT CURRENT_TIMESTAMP
+);

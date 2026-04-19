@@ -1,8 +1,8 @@
-import { SupabaseAuthService } from './SupabaseAuthService';
+import { BetterAuthService } from './BetterAuthService';
 import { HttpDataService } from './HttpDataService';
 import type { IAuthService, IDataService, AuthProvider } from './interfaces';
 
-export type AuthServiceInstance = InstanceType<typeof SupabaseAuthService>;
+export type AuthServiceInstance = InstanceType<typeof BetterAuthService>;
 export type DataServiceInstance = InstanceType<typeof HttpDataService>;
 
 // Singleton instances cache
@@ -23,7 +23,7 @@ export class ServiceFactory {
       return customAuthService;
     }
     if (!authServiceInstance) {
-      authServiceInstance = new SupabaseAuthService();
+      authServiceInstance = new BetterAuthService();
     }
     return authServiceInstance;
   }

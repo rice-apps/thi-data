@@ -25,12 +25,12 @@ function devApiRewrites():
   ).replace(/\/$/, '');
   return [
     {
-      source: `${subpath}/auth`,
-      destination: `${subpath}/auth`,
+      source: `/auth`,
+      destination: `/auth`,
     },
     {
-      source: `${subpath}/auth/:path*`,
-      destination: `${subpath}/auth/:path*`,
+      source: `/auth/:path*`,
+      destination: `/auth/:path*`,
     },
     {
       source: `${subpath}/:path*`,
