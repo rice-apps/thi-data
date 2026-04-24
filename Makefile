@@ -15,14 +15,14 @@ DC := cd $(ROOT) && $(DOCKER_COMPOSE) -f $(ROOT)/docker-compose.yml
 help:
 	@echo "thi-data — one-command workflows"
 	@echo ""
-	@echo "  make dev           Full Docker stack (API, worker, DB, queue, S3) + Next.js dev server"
+	@echo "  make dev           Docker infra + API on host port (see API_PUBLISH_PORT) + Next dev (proxies /api)"
 	@echo "  make dev-local     DB/RabbitMQ/SeaweedFS in Docker; FastAPI + Next.js on host (hot reload)"
 	@echo "  make up            Same services as dev, all logs in this terminal (foreground)"
 	@echo "  make up-detach     Full stack in the background"
 	@echo "  make migrate       Apply idempotent SQL only (safe to repeat; uses one-off backend container)"
 	@echo "  make install       client npm install + server venv + pip (for dev-local)"
 	@echo "  make test          ensures Docker stack is up, waits for API, runs pytest"
-	@echo "  make deploy        production-style: full stack in background + DB/API ready (no Next.js)"
+	@echo "  make deploy        production-style: full stack in background (API + Frontend)"
 	@echo "  make down          Stop and remove containers"
 	@echo ""
 	@echo "Override compose if needed: make dev DOCKER_COMPOSE='docker-compose'"
@@ -65,10 +65,9 @@ up:
 up-detach start:
 	$(DC) up -d --build
 
-# Same images as setup.md “On-Prem Deployment”: Postgres, RabbitMQ, SeaweedFS, API, Celery.
-# Serve the Next.js app separately (e.g. Vercel or `npm run start`); nothing to docker-compose for the client yet.
-deploy: up-detach wait-db wait-api
-	@echo "Stack is up — API http://localhost:8000/docs | RabbitMQ http://localhost:15672 (guest/guest)"
+# Full background stack: Postgres, RabbitMQ, SeaweedFS, API, Celery, Frontend (same DB bootstrap as dev).
+deploy: up-detach wait-db wait-api migrate
+	@echo "Stack is up — Website: http://localhost | API docs: http://localhost/api/docs"
 
 down stop:
 	$(DC) down
@@ -77,8 +76,14 @@ ps:
 	$(DC) ps
 
 # Bring DB up first so wait-db / migrate always succeed; stack applies migrations again on API boot (idempotent).
+# Load repo-root .env (if present) so API_PUBLISH_PORT matches next.config proxy target.
 dev: up-detach wait-db migrate
-	cd $(ROOT)/client && (test -d node_modules || npm install) && npm run dev
+	@set -a; \
+	[ -f $(ROOT)/.env ] && . $(ROOT)/.env; \
+	set +a; \
+	cd $(ROOT)/client && (test -d node_modules || npm install) && \
+	NEXT_DEV_PROXY_API_ORIGIN="$${NEXT_DEV_PROXY_API_ORIGIN:-http://127.0.0.1:$${API_PUBLISH_PORT:-8000}}" \
+	npm run dev
 
 infra-local:
 	$(DC) up -d --build db rabbitmq seaweedfs

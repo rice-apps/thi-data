@@ -21,7 +21,7 @@ def _make_app():
 
     mock_db = MagicMock()
 
-    def override_get_db():
+    async def override_get_db():
         yield mock_db
 
     app.dependency_overrides[get_db] = override_get_db
@@ -95,6 +95,42 @@ class TestGetAllTables:
         assert "owls__corrupted" not in tables
         assert "corrupted_rows" not in tables
 
+    def test_shows_user_tables_with_test_in_name(self):
+        app, _ = _make_app()
+
+        with patch("api.tables.db_module") as mock_db_mod:
+            mock_db_mod.Base.classes.keys.return_value = [
+                "screening_test_results",
+                "testosterone_levels",
+                "test_data",
+            ]
+
+            client = TestClient(app)
+            resp = client.get("/api/tables")
+
+        assert resp.status_code == 200
+        tables = resp.json()["tables"]
+        assert "screening_test_results" in tables
+        assert "testosterone_levels" in tables
+        assert "test_data" not in tables
+
+    def test_hides_dlt_internal_prefix_tables(self):
+        app, _ = _make_app()
+
+        with patch("api.tables.db_module") as mock_db_mod:
+            mock_db_mod.Base.classes.keys.return_value = [
+                "patients",
+                "_dlt_loads",
+            ]
+
+            client = TestClient(app)
+            resp = client.get("/api/tables")
+
+        assert resp.status_code == 200
+        tables = resp.json()["tables"]
+        assert "patients" in tables
+        assert "_dlt_loads" not in tables
+
 
 # GET /api/tables_with_metadata tests
 
@@ -133,18 +169,24 @@ class TestTablesWithMetadata:
 class TestGetTableSchema:
 
     def test_schema_excludes_internal_columns(self):
+        from sqlalchemy import Integer, String
+
         app, _ = _make_app()
 
         mock_model = MagicMock()
         mapper = MagicMock()
         col_id = MagicMock()
         col_id.key = "id"
+        col_id.columns = [MagicMock(type=Integer())]
         col_rowid = MagicMock()
         col_rowid.key = "original_csv_row_id"
+        col_rowid.columns = [MagicMock(type=Integer())]
         col_name = MagicMock()
         col_name.key = "name"
+        col_name.columns = [MagicMock(type=String())]
         col_age = MagicMock()
         col_age.key = "age"
+        col_age.columns = [MagicMock(type=Integer())]
         mapper.column_attrs = [col_id, col_rowid, col_name, col_age]
 
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
@@ -155,10 +197,11 @@ class TestGetTableSchema:
 
         assert resp.status_code == 200
         columns = resp.json()["columns"]
-        assert "id" not in columns
-        assert "original_csv_row_id" not in columns
-        assert "name" in columns
-        assert "age" in columns
+        names = [c["name"] for c in columns]
+        assert "id" not in names
+        assert "original_csv_row_id" not in names
+        assert {"name": "name", "type": "String"} in columns
+        assert {"name": "age", "type": "Integer"} in columns
 
 
 # GET /api/get_size/{table_name} tests
@@ -227,10 +270,10 @@ class TestDeleteTable:
         )
 
         with patch("api.tables.get_class", return_value=MagicMock()) as mock_get_class, \
-             patch("api.tables.get_internal_model_class") as mock_get_internal, \
-             patch("api.tables.get_file_registry_model", return_value=mock_registry), \
-             patch("api.tables.reflect_db") as mock_reflect, \
-             patch("api.tables.settings") as mock_settings:
+             patch("services.table_lifecycle.get_internal_model_class") as mock_get_internal, \
+             patch("services.table_lifecycle.get_file_registry_model", return_value=mock_registry), \
+             patch("services.table_lifecycle.reflect_db") as mock_reflect, \
+             patch("services.table_lifecycle.settings") as mock_settings:
 
             mock_settings.DLT_DATASET = "clinical_data"
             mock_get_internal.side_effect = lambda name: (
@@ -284,11 +327,14 @@ class TestDeleteTable:
         )
 
         with patch("api.tables.get_class", return_value=MagicMock()), \
-             patch("api.tables.get_internal_model_class") as mock_get_internal, \
-             patch("api.tables.get_file_registry_model", return_value=mock_registry), \
-             patch("api.tables.reflect_db"), \
-             patch("api.tables._repo_cache", {"patients": "repo1", "patients__corrupted": "repo2", "other": "repo3"}) as mock_cache, \
-             patch("api.tables.settings") as mock_settings:
+             patch("services.table_lifecycle.get_internal_model_class") as mock_get_internal, \
+             patch("services.table_lifecycle.get_file_registry_model", return_value=mock_registry), \
+             patch("services.table_lifecycle.reflect_db"), \
+             patch(
+                 "services.table_lifecycle._repo_cache",
+                 {"patients": "repo1", "patients__corrupted": "repo2", "other": "repo3"},
+             ) as mock_cache, \
+             patch("services.table_lifecycle.settings") as mock_settings:
 
             mock_settings.DLT_DATASET = "clinical_data"
             mock_get_internal.side_effect = lambda name: (
@@ -324,10 +370,10 @@ class TestDeleteTable:
         mock_db.query.side_effect = db_query_side_effect
 
         with patch("api.tables.get_class", return_value=MagicMock()), \
-             patch("api.tables.get_internal_model_class") as mock_get_internal, \
-             patch("api.tables.get_file_registry_model", return_value=mock_registry_cls), \
-             patch("api.tables.reflect_db"), \
-             patch("api.tables.settings") as mock_settings:
+             patch("services.table_lifecycle.get_internal_model_class") as mock_get_internal, \
+             patch("services.table_lifecycle.get_file_registry_model", return_value=mock_registry_cls), \
+             patch("services.table_lifecycle.reflect_db"), \
+             patch("services.table_lifecycle.settings") as mock_settings:
 
             mock_settings.DLT_DATASET = "clinical_data"
             mock_get_internal.side_effect = lambda name: (

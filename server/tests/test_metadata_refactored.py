@@ -9,7 +9,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
 
-from core.deps import get_db
+from core.deps import get_db_context
 import core.database as db_module
 from core.database import reflect_db
 from crud.base import BaseRepository, model_to_dict
@@ -25,28 +25,23 @@ def setup_metadata_creation():
     if not model_class:
         pytest.fail(f"Test setup failed: Could not find model for table '{METADATA_CREATION_TABLE}'")
 
-    db = next(get_db())
     new_item_data = {
         "created_by": "test_creator",
         "table_name": "test_metadata_table"
     }
 
-    created_item = None
-    try:
+    item_id = None
+    with get_db_context() as db:
         created_item = BaseRepository(model_class).create(db, new_item_data)
-        db.commit()
-        db.refresh(created_item)
-        item_id = str(created_item.id) # Convert UUID to string if necessary
-        yield item_id, new_item_data["table_name"]
-    finally:
-        if created_item:
-            try:
-                BaseRepository(model_class).delete(db, created_item.id)
-                db.commit()
-            except Exception as e:
-                db.rollback()
-                print(f"Error during teardown: {e}")
-        db.close()
+        item_id = str(created_item.id)
+
+    yield item_id, new_item_data["table_name"]
+
+    try:
+        with get_db_context() as db:
+            BaseRepository(model_class).delete(db, item_id)
+    except Exception as e:
+        print(f"Error during teardown: {e}")
 
 def test_metadata_creation_endpoint():
     payload = {
@@ -56,8 +51,7 @@ def test_metadata_creation_endpoint():
     
     reflect_db()
     model_class = db_module.Base.classes.get(METADATA_CREATION_TABLE)
-    db = next(get_db())
-    
+
     created_id = None
     try:
         r = requests.post(f"{API_URL}/api/metadata_creation", json=payload)
@@ -68,8 +62,8 @@ def test_metadata_creation_endpoint():
         created_id = data["id"]
     finally:
         if created_id:
-            BaseRepository(model_class).delete(db, created_id)
-        db.close()
+            with get_db_context() as db:
+                BaseRepository(model_class).delete(db, created_id)
 
 def test_search_created_by(setup_metadata_creation):
     _, _ = setup_metadata_creation
@@ -109,8 +103,7 @@ def test_metadata_update_endpoint(setup_metadata_creation):
     
     reflect_db()
     model_class = db_module.Base.classes.get(METADATA_UPDATES_TABLE)
-    db = next(get_db())
-    
+
     created_id = None
     try:
         r = requests.post(f"{API_URL}/api/metadata_update", json=payload)
@@ -121,5 +114,5 @@ def test_metadata_update_endpoint(setup_metadata_creation):
         created_id = data["id"]
     finally:
         if created_id:
-            BaseRepository(model_class).delete(db, created_id)
-        db.close()
+            with get_db_context() as db:
+                BaseRepository(model_class).delete(db, created_id)

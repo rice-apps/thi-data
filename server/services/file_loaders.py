@@ -52,7 +52,7 @@ def _load_csv(
 ) -> None:
     con.execute(f"""
         CREATE TABLE {table_name} AS
-        SELECT * FROM read_csv('{file_path}', all_varchar=True, auto_detect=True)
+        SELECT * FROM read_csv('{file_path}', all_varchar=True, auto_detect=True, delim=',', null_padding=True)
     """)
 
 
@@ -85,16 +85,18 @@ def _load_xlsx(
             raise ValueError(f"XLSX file is empty or has no header: {file_path}")
 
         headers = []
-        for i, val in enumerate(header_row):
+        for val in header_row:
             if val is None:
-                raise ValueError(
-                    f"XLSX header contains empty cell in column {i + 1}. "
-                    "All header cells must have values."
-                )
+                break
             headers.append(str(val).strip())
+
+        if not headers:
+            raise ValueError(f"XLSX file has no valid header columns: {file_path}")
 
         columns: list[list[str | None]] = [[] for _ in headers]
         for row in rows_iter:
+            if all(val is None for val in row):
+                continue
             for i, val in enumerate(row):
                 if i < len(headers):
                     columns[i].append(_cell_to_str(val))

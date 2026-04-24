@@ -57,7 +57,7 @@ export function Modal({
         `}
       >
         {title && (
-          <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+          <div className="shrink-0 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
             <h2 className="text-xl font-semibold text-slate-800">{title}</h2>
             {!disableClose && (
               <button
@@ -81,7 +81,9 @@ export function Modal({
             )}
           </div>
         )}
-        {children}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -95,7 +97,11 @@ export function ModalBody({
   className?: string;
 }) {
   return (
-    <div className={`px-6 py-4 overflow-y-auto ${className}`}>{children}</div>
+    <div
+      className={`min-h-0 flex-1 overflow-y-auto px-6 py-4 ${className}`}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -108,7 +114,7 @@ export function ModalFooter({
 }) {
   return (
     <div
-      className={`px-6 py-4 border-t border-slate-200 flex justify-end gap-2 ${className}`}
+      className={`shrink-0 px-6 py-4 border-t border-slate-200 flex justify-end gap-2 ${className}`}
     >
       {children}
     </div>

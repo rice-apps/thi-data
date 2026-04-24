@@ -7,6 +7,7 @@ export type CellError = {
 
 export type TableRow = Record<string, TableCellValue> & {
   id?: number | string;
+  original_csv_row_id?: number | string;
   _is_corrupted?: boolean;
   _error_context?: Record<string, CellError>;
 };
@@ -31,6 +32,11 @@ export type PaginatedResponse<T> = {
   limit: number;
 };
 
+export type TableSchemaColumn = {
+  name: string;
+  type?: string;
+};
+
 export type TableSchemaResponse = {
-  columns: string[];
+  columns: TableSchemaColumn[];
 };

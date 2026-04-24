@@ -1,26 +1,29 @@
 'use server';
 
-import { createClient } from '@/utils/supabase/server';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { APIError } from 'better-auth/api';
+import { auth } from '@/lib/auth';
 
 export async function signOutAction() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
+  await auth.api.signOut({ headers: await headers() });
   redirect('/login');
 }
 
 export async function signInAction(formData: FormData) {
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
-  const supabase = await createClient();
 
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (error) {
-    return { error: error.message };
+  try {
+    await auth.api.signInEmail({
+      body: { email, password },
+      headers: await headers(),
+    });
+  } catch (error) {
+    if (error instanceof APIError) {
+      return { error: error.message };
+    }
+    throw error;
   }
 
   redirect('/homescreen');
@@ -31,22 +34,32 @@ export async function signUpAction(formData: FormData) {
   const password = formData.get('password') as string;
   const firstName = formData.get('firstName') as string;
   const lastName = formData.get('lastName') as string;
-  const supabase = await createClient();
 
-  const { error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        first_name: firstName,
-        last_name: lastName,
+  try {
+    await auth.api.signUpEmail({
+      body: {
+        email,
+        password,
+        name: `${firstName} ${lastName}`.trim(),
       },
-    },
-  });
-
-  if (error) {
-    return { error: error.message };
+      headers: await headers(),
+    });
+  } catch (error) {
+    if (error instanceof APIError) {
+      const isPasswordError = /password/i.test(error.message);
+      const isEmailError = /email/i.test(error.message);
+      return {
+        error: error.message,
+        values: {
+          firstName,
+          lastName,
+          email: isEmailError ? '' : email,
+          password: isPasswordError ? '' : password,
+        },
+      };
+    }
+    throw error;
   }
 
-  redirect('/login?message=Check your email for verification');
+  redirect('/homescreen');
 }

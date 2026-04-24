@@ -6,15 +6,37 @@ All tests mock external dependencies (no live Celery/Postgres/HTTP).
 """
 
 import pytest
-from unittest.mock import patch, MagicMock, call
+from pathlib import Path
+from unittest.mock import patch, MagicMock
 from contextlib import contextmanager
+from celery.exceptions import MaxRetriesExceededError
 
 
 # Test helpers
 
+
 @contextmanager
 def _fake_db_context():
     yield MagicMock()
+
+
+@contextmanager
+def _mock_update_file_status():
+    """Celery and orchestration each bind update_file_status at import time; mock both."""
+    m = MagicMock()
+    with patch("celery_task.update_file_status", m), patch(
+        "services.etl_success_orchestration.update_file_status", m
+    ):
+        yield m
+
+
+@contextmanager
+def _patch_db_context(mock_get_db_ctx: MagicMock):
+    """Bind the same DB context mock wherever get_db_context was imported."""
+    with patch("celery_task.get_db_context", mock_get_db_ctx), patch(
+        "core.deps.get_db_context", mock_get_db_ctx
+    ), patch("services.etl_success_orchestration.get_db_context", mock_get_db_ctx):
+        yield
 
 
 def _setup_mocks(mock_get_db_ctx, mock_get_storage, mock_get_repo=None, object_key="uploads/test.csv"):
@@ -46,35 +68,40 @@ def _setup_mocks(mock_get_db_ctx, mock_get_storage, mock_get_repo=None, object_k
 
 # process_patient_file tests
 
+
 class TestProcessPatientFile:
 
-    @patch("celery_task.notify_frontend")
-    @patch("celery_task._refresh_api_server")
+    @patch("services.etl_success_orchestration.publish_thi_event")
+    @patch("services.etl_success_orchestration.refresh_api_server_schema")
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
-    @patch("celery_task.update_file_status")
     @patch("celery_task.run_etl")
     def test_success_path(
-        self, mock_etl, mock_update_status, mock_get_db_ctx,
-        mock_get_storage, mock_refresh, mock_notify
+        self,
+        mock_etl,
+        mock_get_db_ctx,
+        mock_get_storage,
+        mock_refresh,
+        mock_publish,
     ):
         from celery_task import process_patient_file
 
         mock_etl.return_value = 0
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with _mock_update_file_status() as mock_update_status, patch(
+            "core.deps.get_file_registry_repo"
+        ) as mock_get_repo:
             _setup_mocks(mock_get_db_ctx, mock_get_storage, mock_get_repo)
-            result = process_patient_file._orig_run("file-1", {"age": "INTEGER"})
+            result = process_patient_file.run("file-1", {"age": "INTEGER"})
 
         assert result["status"] == "SUCCESS"
         assert result["file_id"] == "file-1"
 
-        # Verify call order: PROCESSING → ETL → SUCCESS → cleanup → refresh → notify
         mock_update_status.assert_any_call("file-1", "PROCESSING")
         mock_update_status.assert_any_call("file-1", "SUCCESS")
         mock_refresh.assert_called_once()
-        mock_notify.assert_called_once()
-        assert mock_notify.call_args[0][0]["type"] == "celery_success"
+        mock_publish.assert_called_once()
+        assert mock_publish.call_args[0][0]["type"] == "celery_success"
 
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
@@ -90,13 +117,13 @@ class TestProcessPatientFile:
 
         mock_get_db_ctx.return_value = fake_ctx()
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with patch("core.deps.get_file_registry_repo") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.get_by_field.return_value = []
             mock_get_repo.return_value = mock_repo
 
             with pytest.raises(ValueError, match="not found in registry"):
-                process_patient_file._orig_run("missing-id", {"a": "VARCHAR"})
+                process_patient_file.run("missing-id", {"a": "VARCHAR"})
 
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
@@ -116,60 +143,81 @@ class TestProcessPatientFile:
 
         mock_get_db_ctx.return_value = fake_ctx()
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with patch("core.deps.get_file_registry_repo") as mock_get_repo:
             mock_repo = MagicMock()
             mock_record = MagicMock()
             mock_record.object_key = "uploads/test.csv"
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
 
-            with pytest.raises(FileNotFoundError, match="Could not resolve"):
-                process_patient_file._orig_run("file-2", {"a": "VARCHAR"})
+            with patch.object(
+                process_patient_file,
+                "retry",
+                side_effect=MaxRetriesExceededError(),
+            ):
+                with pytest.raises(FileNotFoundError, match="Could not resolve"):
+                    process_patient_file.run("file-2", {"a": "VARCHAR"})
 
-    @patch("celery_task.notify_frontend")
+    @patch("celery_task.publish_thi_event")
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
     @patch("celery_task.update_file_status")
     @patch("celery_task.run_etl")
     def test_etl_failure_updates_failed_and_notifies(
-        self, mock_etl, mock_update_status, mock_get_db_ctx,
-        mock_get_storage, mock_notify
+        self,
+        mock_etl,
+        mock_update_status,
+        mock_get_db_ctx,
+        mock_get_storage,
+        mock_publish,
     ):
         from celery_task import process_patient_file
 
         mock_etl.side_effect = RuntimeError("ETL crashed")
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with patch("core.deps.get_file_registry_repo") as mock_get_repo:
             _setup_mocks(mock_get_db_ctx, mock_get_storage, mock_get_repo)
 
-            with pytest.raises(RuntimeError, match="ETL crashed"):
-                process_patient_file._orig_run("file-3", {"a": "VARCHAR"})
+            with patch.object(
+                process_patient_file,
+                "retry",
+                side_effect=MaxRetriesExceededError(),
+            ):
+                with pytest.raises(RuntimeError, match="ETL crashed"):
+                    process_patient_file.run("file-3", {"a": "VARCHAR"})
 
         mock_update_status.assert_any_call(
             "file-3", "FAILED", error_message="ETL crashed"
         )
-        mock_notify.assert_called_once()
-        assert mock_notify.call_args[0][0]["type"] == "celery_failed"
+        mock_publish.assert_called_once()
+        assert mock_publish.call_args[0][0]["type"] == "celery_failed"
 
-    @patch("celery_task.notify_frontend")
-    @patch("celery_task._refresh_api_server")
+    @patch("services.etl_success_orchestration.record_metadata_creation")
+    @patch("services.etl_success_orchestration.publish_thi_event")
+    @patch("services.etl_success_orchestration.refresh_api_server_schema")
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
-    @patch("celery_task.update_file_status")
     @patch("celery_task.run_etl")
     def test_cleanup_deletes_storage_and_local(
-        self, mock_etl, mock_update_status, mock_get_db_ctx,
-        mock_get_storage, mock_refresh, mock_notify
+        self,
+        mock_etl,
+        mock_get_db_ctx,
+        mock_get_storage,
+        mock_refresh,
+        mock_publish,
+        mock_record_meta,
     ):
         from celery_task import process_patient_file
 
         mock_etl.return_value = 0
 
+        tmp_root = Path("/tmp/thi-storage")
+        tmp_root.mkdir(parents=True, exist_ok=True)
+        local_file = tmp_root / "test-cleanup.csv"
+        local_file.write_text("x", encoding="utf-8")
+
         mock_storage = MagicMock()
-        mock_path = MagicMock()
-        mock_path.__str__ = lambda s: "/tmp/thi-storage/test.csv"
-        mock_path.exists.return_value = True
-        mock_storage.get_file_path.return_value = mock_path
+        mock_storage.get_file_path.return_value = local_file
         mock_get_storage.return_value = mock_storage
 
         @contextmanager
@@ -178,27 +226,34 @@ class TestProcessPatientFile:
 
         mock_get_db_ctx.return_value = fake_ctx()
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with _mock_update_file_status(), patch("core.deps.get_file_registry_repo") as mock_get_repo:
             mock_repo = MagicMock()
             mock_record = MagicMock()
             mock_record.object_key = "uploads/test.csv"
+            mock_record.target_table_name = "t"
+            mock_record.uploaded_by = "u"
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
 
-            process_patient_file._orig_run("file-4", {"a": "VARCHAR"})
+            process_patient_file.run("file-4", {"a": "VARCHAR"})
 
         mock_storage.delete_file.assert_called_once_with("uploads/test.csv")
-        mock_path.unlink.assert_called_once()
+        assert not local_file.exists()
 
-    @patch("celery_task.notify_frontend")
-    @patch("celery_task._refresh_api_server")
+    @patch("services.etl_success_orchestration.record_metadata_creation")
+    @patch("services.etl_success_orchestration.publish_thi_event")
+    @patch("services.etl_success_orchestration.refresh_api_server_schema")
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
-    @patch("celery_task.update_file_status")
     @patch("celery_task.run_etl")
     def test_cleanup_failure_doesnt_block_success(
-        self, mock_etl, mock_update_status, mock_get_db_ctx,
-        mock_get_storage, mock_refresh, mock_notify
+        self,
+        mock_etl,
+        mock_get_db_ctx,
+        mock_get_storage,
+        mock_refresh,
+        mock_publish,
+        mock_record_meta,
     ):
         from celery_task import process_patient_file
 
@@ -218,24 +273,26 @@ class TestProcessPatientFile:
 
         mock_get_db_ctx.return_value = fake_ctx()
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with _mock_update_file_status(), patch("core.deps.get_file_registry_repo") as mock_get_repo:
             mock_repo = MagicMock()
             mock_record = MagicMock()
             mock_record.object_key = "uploads/test.csv"
+            mock_record.target_table_name = "t"
+            mock_record.uploaded_by = "u"
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
 
-            result = process_patient_file._orig_run("file-5", {"a": "VARCHAR"})
+            result = process_patient_file.run("file-5", {"a": "VARCHAR"})
 
-        # Should still succeed despite cleanup failure
         assert result["status"] == "SUCCESS"
 
 
 # notify_frontend tests
 
+
 class TestNotifyFrontend:
 
-    @patch("celery_task.psycopg2")
+    @patch("services.pg_notify_events.psycopg2")
     def test_sends_pg_notify_with_json(self, mock_psycopg2):
         from celery_task import notify_frontend
         import json
@@ -255,7 +312,7 @@ class TestNotifyFrontend:
         assert "NOTIFY" in call_args[0][0]
         assert json.dumps(event) == call_args[0][1][0]
 
-    @patch("celery_task.psycopg2")
+    @patch("services.pg_notify_events.psycopg2")
     def test_closes_connection_in_finally(self, mock_psycopg2):
         from celery_task import notify_frontend
 
@@ -265,7 +322,6 @@ class TestNotifyFrontend:
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-        # Even if execute raises, conn should close
         mock_cursor.execute.side_effect = RuntimeError("pg error")
 
         with pytest.raises(RuntimeError):
@@ -276,9 +332,10 @@ class TestNotifyFrontend:
 
 # _refresh_api_server tests
 
+
 class TestRefreshApiServer:
 
-    @patch("celery_task.http_requests")
+    @patch("services.api_reflection_client.requests")
     def test_success_first_attempt(self, mock_requests):
         from celery_task import _refresh_api_server
 
@@ -289,7 +346,7 @@ class TestRefreshApiServer:
         _refresh_api_server(max_retries=2)
         assert mock_requests.post.call_count == 1
 
-    @patch("celery_task.http_requests")
+    @patch("services.api_reflection_client.requests")
     def test_retries_on_failure(self, mock_requests):
         from celery_task import _refresh_api_server
 
@@ -303,7 +360,7 @@ class TestRefreshApiServer:
         _refresh_api_server(max_retries=2)
         assert mock_requests.post.call_count == 2
 
-    @patch("celery_task.http_requests")
+    @patch("services.api_reflection_client.requests")
     def test_raises_after_max_retries(self, mock_requests):
         from celery_task import _refresh_api_server
 
@@ -317,10 +374,11 @@ class TestRefreshApiServer:
 
 # update_file_status tests
 
+
 class TestUpdateFileStatus:
 
-    @patch("celery_task.get_file_registry_repo")
-    @patch("celery_task.get_db_context")
+    @patch("core.deps.get_file_registry_repo")
+    @patch("core.deps.get_db_context")
     def test_updates_with_correct_args(self, mock_get_db_ctx, mock_get_repo):
         from celery_task import update_file_status
 
@@ -344,8 +402,8 @@ class TestUpdateFileStatus:
             update_data={"status": "PROCESSING"},
         )
 
-    @patch("celery_task.get_file_registry_repo")
-    @patch("celery_task.get_db_context")
+    @patch("core.deps.get_file_registry_repo")
+    @patch("core.deps.get_db_context")
     def test_includes_error_message(self, mock_get_db_ctx, mock_get_repo):
         from celery_task import update_file_status
 
@@ -372,18 +430,21 @@ class TestUpdateFileStatus:
 
 # Metadata creation persistence tests
 
+
 class TestMetadataCreation:
 
-    @patch("celery_task.notify_frontend")
-    @patch("celery_task._refresh_api_server")
+    @patch("services.etl_success_orchestration.publish_thi_event")
+    @patch("services.etl_success_orchestration.refresh_api_server_schema")
     @patch("celery_task.get_storage_provider")
-    @patch("celery_task.get_db_context")
-    @patch("celery_task.update_file_status")
     @patch("celery_task.run_etl")
-    @patch("celery_task.get_internal_model_class_raw")
+    @patch("services.etl_success_orchestration.get_internal_model_class_raw")
     def test_metadata_creation_record_persisted(
-        self, mock_get_model, mock_etl, mock_update_status,
-        mock_get_db_ctx, mock_get_storage, mock_refresh, mock_notify
+        self,
+        mock_get_model,
+        mock_etl,
+        mock_get_storage,
+        mock_refresh,
+        mock_publish,
     ):
         """After successful ETL, a metadata_creation record is inserted with
         the correct table_name and created_by values, and flush is called."""
@@ -406,33 +467,38 @@ class TestMetadataCreation:
             db_sessions.append(db)
             yield db
 
-        mock_get_db_ctx.side_effect = fake_ctx
+        mock_get_db_ctx = MagicMock(side_effect=fake_ctx)
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with _mock_update_file_status(), _patch_db_context(mock_get_db_ctx), patch(
+            "core.deps.get_file_registry_repo"
+        ) as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
 
-            result = process_patient_file._orig_run("file-meta", {"a": "VARCHAR"})
+            result = process_patient_file.run("file-meta", {"a": "VARCHAR"})
 
         assert result["status"] == "SUCCESS"
         mock_get_model.assert_called_once_with("metadata_creation")
         mock_meta_cls.assert_called_once_with(table_name="my_table", created_by="alice")
 
-        # One of the sessions should have had add + flush called
         metadata_db = [s for s in db_sessions if s.add.called and s.flush.called]
         assert len(metadata_db) == 1
 
-    @patch("celery_task.notify_frontend")
-    @patch("celery_task._refresh_api_server")
+    @patch("services.etl_success_orchestration.publish_thi_event")
+    @patch("services.etl_success_orchestration.refresh_api_server_schema")
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
-    @patch("celery_task.update_file_status")
     @patch("celery_task.run_etl")
-    @patch("celery_task.get_internal_model_class_raw")
+    @patch("services.etl_success_orchestration.get_internal_model_class_raw")
     def test_metadata_failure_does_not_block_task(
-        self, mock_get_model, mock_etl, mock_update_status,
-        mock_get_db_ctx, mock_get_storage, mock_refresh, mock_notify
+        self,
+        mock_get_model,
+        mock_etl,
+        mock_get_db_ctx,
+        mock_get_storage,
+        mock_refresh,
+        mock_publish,
     ):
         """If metadata_creation insertion fails, the task still returns SUCCESS."""
         from celery_task import process_patient_file
@@ -440,24 +506,26 @@ class TestMetadataCreation:
         mock_etl.return_value = 0
         mock_get_model.side_effect = RuntimeError("model not found")
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with _mock_update_file_status(), patch("core.deps.get_file_registry_repo") as mock_get_repo:
             _setup_mocks(mock_get_db_ctx, mock_get_storage, mock_get_repo)
 
-            result = process_patient_file._orig_run("file-meta-fail", {"a": "VARCHAR"})
+            result = process_patient_file.run("file-meta-fail", {"a": "VARCHAR"})
 
         assert result["status"] == "SUCCESS"
         mock_refresh.assert_called_once()
 
-    @patch("celery_task.notify_frontend")
-    @patch("celery_task._refresh_api_server")
+    @patch("services.etl_success_orchestration.publish_thi_event")
+    @patch("services.etl_success_orchestration.refresh_api_server_schema")
     @patch("celery_task.get_storage_provider")
-    @patch("celery_task.get_db_context")
-    @patch("celery_task.update_file_status")
     @patch("celery_task.run_etl")
-    @patch("celery_task.get_internal_model_class_raw")
+    @patch("services.etl_success_orchestration.get_internal_model_class_raw")
     def test_metadata_uses_uploaded_by_from_registry(
-        self, mock_get_model, mock_etl, mock_update_status,
-        mock_get_db_ctx, mock_get_storage, mock_refresh, mock_notify
+        self,
+        mock_get_model,
+        mock_etl,
+        mock_get_storage,
+        mock_refresh,
+        mock_publish,
     ):
         """The created_by field in metadata_creation comes from file_registry.uploaded_by."""
         from celery_task import process_patient_file
@@ -469,20 +537,30 @@ class TestMetadataCreation:
         mock_record = MagicMock()
         mock_record.object_key = "uploads/data.csv"
         mock_record.target_table_name = "patient_data"
-        mock_record.uploaded_by = None  # No user name set
+        mock_record.uploaded_by = None
 
         @contextmanager
         def fake_ctx():
             yield MagicMock()
 
-        mock_get_db_ctx.side_effect = fake_ctx
+        mock_get_db_ctx = MagicMock(side_effect=fake_ctx)
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with _mock_update_file_status(), _patch_db_context(mock_get_db_ctx), patch(
+            "core.deps.get_file_registry_repo"
+        ) as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
 
-            process_patient_file._orig_run("file-anon", {"a": "VARCHAR"})
+            mock_storage = MagicMock()
+            mock_storage.get_file_path.return_value = MagicMock(
+                __str__=lambda s: "/tmp/test.csv",
+                exists=lambda: False,
+            )
+            mock_get_storage.return_value = mock_storage
 
-        # When uploaded_by is None, falls back to "unknown"
-        mock_meta_cls.assert_called_once_with(table_name="patient_data", created_by="unknown")
+            process_patient_file.run("file-anon", {"a": "VARCHAR"})
+
+        mock_meta_cls.assert_called_once_with(
+            table_name="patient_data", created_by="unknown"
+        )

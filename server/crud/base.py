@@ -33,6 +33,14 @@ class BaseRepository(Generic[ModelType]):
         pk_cols = mapper.primary_key
         self._pk_attr = pk_cols[0].key if len(pk_cols) == 1 else None
 
+    def _order_by_primary_key(self, query):
+        mapper = sa_inspect(self.model)
+        if not mapper.primary_key:
+            return query
+        for pk in mapper.primary_key:
+            query = query.order_by(pk.asc())
+        return query
+
     def get_by_id(self, db: Session, id: Any) -> Optional[ModelType]:
         pk_column = getattr(self.model, self._pk_attr)
         return db.query(self.model).filter(pk_column == id).first()
@@ -41,7 +49,8 @@ class BaseRepository(Generic[ModelType]):
         self, db: Session, *, skip: int = 0, limit: int = 100
     ) -> Tuple[List[ModelType], int]:
         total = db.query(self.model).count()
-        items = db.query(self.model).offset(skip).limit(limit).all()
+        q = self._order_by_primary_key(db.query(self.model))
+        items = q.offset(skip).limit(limit).all()
         return items, total
 
     def get_by_field(self, db: Session, field_name: str, value: Any) -> List[ModelType]:
@@ -50,7 +59,7 @@ class BaseRepository(Generic[ModelType]):
     def create(self, db: Session, obj_in: Dict[str, Any]) -> ModelType:
         db_obj = self.model(**obj_in)
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -65,14 +74,18 @@ class BaseRepository(Generic[ModelType]):
         if isinstance(obj_in, dict):
             update_data = obj_in
         else:
-            update_data = obj_in.dict(exclude_unset=True)
-        
+            update_data = (
+                obj_in.model_dump(exclude_unset=True)
+                if hasattr(obj_in, "model_dump")
+                else obj_in.dict(exclude_unset=True)
+            )
+
         for field in obj_data:
             if field in update_data:
                 setattr(db_obj, field, update_data[field])
-        
+
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -80,7 +93,7 @@ class BaseRepository(Generic[ModelType]):
         obj = self.get_by_id(db, id)
         if obj:
             db.delete(obj)
-            db.commit()
+            db.flush()
             return True
         return False
 
@@ -96,9 +109,9 @@ class BaseRepository(Generic[ModelType]):
                     setattr(item, key, value)
             db.add(item)
             updated_count += 1
-        
+
         if updated_count > 0:
-            db.commit()
+            db.flush()
         return updated_count
 
     def delete_by_field(self, db: Session, field_name: str, value: Any) -> int:
@@ -110,9 +123,9 @@ class BaseRepository(Generic[ModelType]):
         for item in items:
             db.delete(item)
             deleted_count += 1
-        
+
         if deleted_count > 0:
-            db.commit()
+            db.flush()
         return deleted_count
 
     def get_by_date_range(
@@ -133,5 +146,6 @@ class BaseRepository(Generic[ModelType]):
             cast(column_attr, String).ilike(f"%{match}%")
         )
         total = query.count()
+        query = self._order_by_primary_key(query)
         items = query.offset(skip).limit(limit).all()
         return items, total

@@ -21,7 +21,7 @@ def _make_app():
 
     mock_db = MagicMock()
 
-    def override_get_db():
+    async def override_get_db():
         yield mock_db
 
     app.dependency_overrides[get_db] = override_get_db
@@ -47,6 +47,19 @@ def _mock_mapper(columns, pk_columns=None):
     return mapper
 
 
+def _mock_table_columns(model_mock, names):
+    """Table.columns for merge_corruption_pairs (name/key aligned with model_to_dict)."""
+    cols = []
+    for n in names:
+        c = MagicMock()
+        c.name = n
+        c.key = n
+        cols.append(c)
+    table = MagicMock()
+    table.columns = cols
+    model_mock.__table__ = table
+
+
 # Get all items tests
 
 class TestGetAllItems:
@@ -58,8 +71,8 @@ class TestGetAllItems:
 
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.get_class_strict", return_value=None), \
-             patch("api.rows.get_repository") as mock_get_repo:
+        with patch("services.dynamic_rows_service.fetch_merged_page_or_none", return_value=None), \
+             patch("services.dynamic_rows_service.get_repository") as mock_get_repo:
 
             mock_repo = MagicMock()
             mock_item = MagicMock()
@@ -68,7 +81,7 @@ class TestGetAllItems:
             mock_repo.get_all.return_value = ([mock_item], 1)
             mock_get_repo.return_value = mock_repo
 
-            with patch("api.rows.model_to_dict", return_value={"id": 1, "name": "Alice"}):
+            with patch("services.dynamic_rows_service.model_to_dict", return_value={"id": 1, "name": "Alice"}):
                 client = TestClient(app)
                 resp = client.get("/api/test_table")
 
@@ -82,6 +95,7 @@ class TestGetAllItems:
         app, mock_db = _make_app()
         mock_model = MagicMock()
         mock_model.original_csv_row_id = MagicMock()
+        _mock_table_columns(mock_model, ["id", "name", "original_csv_row_id"])
 
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
@@ -96,10 +110,10 @@ class TestGetAllItems:
         mock_stmt.offset.return_value = mock_stmt
         mock_stmt.limit.return_value = mock_stmt
 
-        with patch("api.rows.get_class_strict", return_value=mock_corrupted_model), \
-             patch("api.rows.inspect", return_value=mapper), \
-             patch("api.rows.select", return_value=mock_stmt), \
-             patch("api.rows.model_to_dict") as mock_to_dict:
+        with patch("services.row_corruption.resolve_sidecar_class", return_value=mock_corrupted_model), \
+             patch("services.row_corruption.inspect", return_value=mapper), \
+             patch("services.row_corruption.select", return_value=mock_stmt), \
+             patch("services.row_corruption.model_to_dict") as mock_to_dict:
 
             # Mock the db.execute result
             mock_main_row = MagicMock()
@@ -117,6 +131,51 @@ class TestGetAllItems:
         assert data["data"][0]["_is_corrupted"] is False
         assert data["data"][0]["_error_context"] is None
 
+    def test_join_dedupes_multiple_sidecars_per_row(self):
+        app, mock_db = _make_app()
+        mock_model = MagicMock()
+        mock_model.original_csv_row_id = MagicMock()
+        _mock_table_columns(mock_model, ["id", "name", "original_csv_row_id"])
+        app.dependency_overrides[get_model_class] = lambda table_name: mock_model
+        mock_corrupted_model = MagicMock()
+        mapper = _mock_mapper(["id", "name", "original_csv_row_id"])
+        mock_stmt = MagicMock()
+        mock_stmt.outerjoin.return_value = mock_stmt
+        mock_stmt.offset.return_value = mock_stmt
+        mock_stmt.limit.return_value = mock_stmt
+
+        mock_main = MagicMock()
+        mock_main.id = 1
+        cr1 = MagicMock()
+        cr2 = MagicMock()
+
+        def to_dict(obj):
+            if obj is mock_main:
+                return {"id": 1, "name": None, "original_csv_row_id": 10}
+            if obj is cr1:
+                return {"original_csv_row_id": 10, "name": "bad1", "error_reason": "e1"}
+            if obj is cr2:
+                return {"original_csv_row_id": 10, "name": "bad2", "error_reason": "e2"}
+            return {}
+
+        with patch("services.row_corruption.resolve_sidecar_class", return_value=mock_corrupted_model), \
+             patch("services.row_corruption.inspect", return_value=mapper), \
+             patch("services.row_corruption.select", return_value=mock_stmt), \
+             patch("services.row_corruption.model_to_dict", side_effect=to_dict):
+            mock_db.execute.return_value.all.return_value = [
+                (mock_main, cr1),
+                (mock_main, cr2),
+            ]
+            mock_db.query.return_value.count.return_value = 1
+
+            client = TestClient(app)
+            resp = client.get("/api/test_table")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["data"]) == 1
+        assert body["data"][0]["id"] == 1
+
 
 # Get one item tests
 
@@ -127,8 +186,11 @@ class TestGetOneItem:
         mock_model = MagicMock()
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.get_repository") as mock_get_repo, \
-             patch("api.rows.model_to_dict", return_value={"id": 1, "name": "Alice"}):
+        with patch("services.dynamic_rows_service.get_repository") as mock_get_repo, \
+             patch(
+                 "services.dynamic_rows_service.serialize_main_rows",
+                 return_value=[{"id": 1, "name": "Alice"}],
+             ):
             mock_repo = MagicMock()
             mock_repo.get_by_id.return_value = MagicMock()
             mock_get_repo.return_value = mock_repo
@@ -144,7 +206,7 @@ class TestGetOneItem:
         mock_model = MagicMock()
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.get_repository") as mock_get_repo:
+        with patch("services.dynamic_rows_service.get_repository") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.get_by_id.return_value = None
             mock_get_repo.return_value = mock_repo
@@ -166,10 +228,10 @@ class TestCreateItem:
         mapper = _mock_mapper(["id", "name", "age"])
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.inspect", return_value=mapper), \
-             patch("api.rows.get_repository") as mock_get_repo, \
-             patch("api.rows.model_to_dict", return_value={"id": 1, "name": "Alice", "age": 30}), \
-             patch("api.rows.log_metadata_update"):
+        with patch("services.dynamic_row_validation.inspect", return_value=mapper), \
+             patch("services.dynamic_rows_service.get_repository") as mock_get_repo, \
+             patch("services.dynamic_rows_service.model_to_dict", return_value={"id": 1, "name": "Alice", "age": 30}), \
+             patch("services.dynamic_rows_service.record_table_data_change"):
             mock_repo = MagicMock()
             mock_item = MagicMock()
             mock_item.id = 1
@@ -189,7 +251,7 @@ class TestCreateItem:
         mapper = _mock_mapper(["id", "name"])
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.inspect", return_value=mapper):
+        with patch("services.dynamic_row_validation.inspect", return_value=mapper):
             client = TestClient(app)
             resp = client.post("/api/test_table", json={"nonexistent": "value"})
 
@@ -208,10 +270,13 @@ class TestUpdateItem:
         mapper = _mock_mapper(["id", "name"])
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.inspect", return_value=mapper), \
-             patch("api.rows.get_repository") as mock_get_repo, \
-             patch("api.rows.model_to_dict", return_value={"id": 1, "name": "Updated"}), \
-             patch("api.rows.log_metadata_update"):
+        with patch("services.dynamic_row_validation.inspect", return_value=mapper), \
+             patch("services.dynamic_rows_service.get_repository") as mock_get_repo, \
+             patch(
+                 "services.dynamic_rows_service.serialize_main_rows",
+                 return_value=[{"id": 1, "name": "Updated"}],
+             ), \
+             patch("services.dynamic_rows_service.record_table_data_change"):
             mock_repo = MagicMock()
             mock_repo.get_by_id.return_value = MagicMock()
             mock_repo.update.return_value = MagicMock()
@@ -229,7 +294,7 @@ class TestUpdateItem:
         mock_model.__table__ = MagicMock(schema="public")
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.get_repository") as mock_get_repo:
+        with patch("services.dynamic_rows_service.get_repository") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.get_by_id.return_value = None
             mock_get_repo.return_value = mock_repo
@@ -246,8 +311,8 @@ class TestUpdateItem:
         mapper = _mock_mapper(["id", "name"])
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.inspect", return_value=mapper), \
-             patch("api.rows.get_repository") as mock_get_repo:
+        with patch("services.dynamic_row_validation.inspect", return_value=mapper), \
+             patch("services.dynamic_rows_service.get_repository") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.get_by_id.return_value = MagicMock()
             mock_get_repo.return_value = mock_repo
@@ -265,8 +330,8 @@ class TestUpdateItem:
         mapper = _mock_mapper(["id", "name"], pk_columns=["id"])
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.inspect", return_value=mapper), \
-             patch("api.rows.get_repository") as mock_get_repo:
+        with patch("services.dynamic_row_validation.inspect", return_value=mapper), \
+             patch("services.dynamic_rows_service.get_repository") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.get_by_id.return_value = MagicMock()
             mock_get_repo.return_value = mock_repo
@@ -289,12 +354,17 @@ class TestUpdateItem:
         mock_corrupted_model.original_csv_row_id = MagicMock()
 
         # is_dlt_table will return True because schema is dlt_dataset
-        with patch("api.rows.is_dlt_table", return_value=True), \
-             patch("api.rows.inspect", return_value=mapper), \
-             patch("api.rows.get_repository") as mock_get_repo, \
-             patch("api.rows.model_to_dict") as mock_to_dict, \
-             patch("api.rows.log_metadata_update"), \
-             patch("api.rows.get_class_strict", return_value=mock_corrupted_model):
+        with patch("services.dynamic_rows_service.is_dlt_table", return_value=True), \
+             patch("services.dynamic_row_validation.inspect", return_value=mapper), \
+             patch("services.dynamic_rows_service.get_repository") as mock_get_repo, \
+             patch(
+                 "services.dynamic_rows_service.serialize_main_rows",
+                 return_value=[
+                     {"id": 1, "name": "Updated", "original_csv_row_id": "row-123"}
+                 ],
+             ), \
+             patch("services.dynamic_rows_service.record_table_data_change"), \
+             patch("services.row_corruption.resolve_sidecar_class", return_value=mock_corrupted_model):
              
             mock_repo = MagicMock()
             mock_item = MagicMock()
@@ -306,7 +376,6 @@ class TestUpdateItem:
             mock_repo.update.return_value = updated_mock_item
             
             mock_get_repo.return_value = mock_repo
-            mock_to_dict.return_value = {"id": 1, "name": "Updated", "original_csv_row_id": "row-123"}
 
             client = TestClient(app)
             resp = client.put("/api/test_table/1", json={"name": "Updated"})
@@ -329,8 +398,8 @@ class TestDeleteItem:
         mock_model.__table__ = MagicMock(schema="public")
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.get_repository") as mock_get_repo, \
-             patch("api.rows.log_metadata_update"):
+        with patch("services.dynamic_rows_service.get_repository") as mock_get_repo, \
+             patch("services.dynamic_rows_service.record_table_data_change"):
             mock_repo = MagicMock()
             mock_repo.delete.return_value = True
             mock_get_repo.return_value = mock_repo
@@ -347,7 +416,7 @@ class TestDeleteItem:
         mock_model.__table__ = MagicMock(schema="public")
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.get_repository") as mock_get_repo:
+        with patch("services.dynamic_rows_service.get_repository") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.delete.return_value = False
             mock_get_repo.return_value = mock_repo
@@ -367,10 +436,10 @@ class TestDeleteItem:
         mock_corrupted_model = MagicMock()
         mock_corrupted_model.original_csv_row_id = MagicMock()
 
-        with patch("api.rows.is_dlt_table", return_value=True), \
-             patch("api.rows.get_repository") as mock_get_repo, \
-             patch("api.rows.log_metadata_update"), \
-             patch("api.rows.get_class_strict", return_value=mock_corrupted_model):
+        with patch("services.dynamic_rows_service.is_dlt_table", return_value=True), \
+             patch("services.dynamic_rows_service.get_repository") as mock_get_repo, \
+             patch("services.dynamic_rows_service.record_table_data_change"), \
+             patch("services.row_corruption.resolve_sidecar_class", return_value=mock_corrupted_model):
              
             mock_repo = MagicMock()
             mock_item = MagicMock()
@@ -399,8 +468,9 @@ class TestMatchItems:
         mock_model = MagicMock()
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.get_repository") as mock_get_repo, \
-             patch("api.rows.model_to_dict", return_value={"id": 1, "name": "Alice"}):
+        with patch("services.dynamic_rows_service.get_repository") as mock_get_repo, \
+             patch("services.row_corruption.resolve_sidecar_class", return_value=None), \
+             patch("services.row_corruption.model_to_dict", return_value={"id": 1, "name": "Alice"}):
             mock_repo = MagicMock()
             mock_repo.filter_text.return_value = ([MagicMock()], 1)
             mock_get_repo.return_value = mock_repo
@@ -417,7 +487,7 @@ class TestMatchItems:
         mock_model = MagicMock()
         app.dependency_overrides[get_model_class] = lambda table_name: mock_model
 
-        with patch("api.rows.get_repository") as mock_get_repo:
+        with patch("services.dynamic_rows_service.get_repository") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.filter_text.side_effect = Exception("column not found")
             mock_get_repo.return_value = mock_repo
@@ -433,7 +503,7 @@ class TestMatchItems:
 class TestLogMetadataUpdate:
 
     def test_existing_record(self):
-        from api.rows import log_metadata_update
+        from services.metadata_audit import record_table_data_change
 
         mock_db = MagicMock()
         mock_creation = MagicMock()
@@ -443,22 +513,22 @@ class TestLogMetadataUpdate:
         mock_stmt = MagicMock()
         mock_stmt.where.return_value = mock_stmt
 
-        with patch("api.rows.get_internal_model_class") as mock_get_model, \
-             patch("api.rows.select", return_value=mock_stmt):
+        with patch("services.metadata_audit.get_internal_model_class") as mock_get_model, \
+             patch("services.metadata_audit.select", return_value=mock_stmt):
             mock_creation_model = MagicMock()
             mock_updates_model = MagicMock()
             mock_get_model.side_effect = [mock_creation_model, mock_updates_model]
 
             mock_db.execute.return_value.scalars.return_value.first.return_value = mock_creation
 
-            log_metadata_update(mock_db, "patients", "admin")
+            record_table_data_change(mock_db, "patients", "admin")
 
             # Should have added an update record and flushed
             mock_db.add.assert_called()
             mock_db.flush.assert_called()
 
     def test_auto_create_record(self):
-        from api.rows import log_metadata_update
+        from services.metadata_audit import record_table_data_change
 
         mock_db = MagicMock()
 
@@ -466,8 +536,8 @@ class TestLogMetadataUpdate:
         mock_stmt = MagicMock()
         mock_stmt.where.return_value = mock_stmt
 
-        with patch("api.rows.get_internal_model_class") as mock_get_model, \
-             patch("api.rows.select", return_value=mock_stmt):
+        with patch("services.metadata_audit.get_internal_model_class") as mock_get_model, \
+             patch("services.metadata_audit.select", return_value=mock_stmt):
             mock_creation_model = MagicMock()
             mock_updates_model = MagicMock()
             mock_get_model.side_effect = [mock_creation_model, mock_updates_model]
@@ -475,16 +545,16 @@ class TestLogMetadataUpdate:
             # No creation record found
             mock_db.execute.return_value.scalars.return_value.first.return_value = None
 
-            log_metadata_update(mock_db, "patients")
+            record_table_data_change(mock_db, "patients")
 
             # Should have added both creation and update records
             assert mock_db.add.call_count >= 1
 
     def test_swallows_exceptions(self):
-        from api.rows import log_metadata_update
+        from services.metadata_audit import record_table_data_change
 
         mock_db = MagicMock()
 
-        with patch("api.rows.get_internal_model_class", side_effect=Exception("boom")):
+        with patch("services.metadata_audit.get_internal_model_class", side_effect=Exception("boom")):
             # Should not raise
-            log_metadata_update(mock_db, "patients")
+            record_table_data_change(mock_db, "patients")

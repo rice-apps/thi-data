@@ -159,6 +159,7 @@ function SchemaEditorContent() {
         file_schema: {
           fields: normalizedFields,
         },
+        status: 'SCHEMA_CONFIRMED',
       });
 
       // Build proposed_schema dict keyed by original column name for inferred fields,

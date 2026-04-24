@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 import logging
 
 from core.deps import get_db, get_storage_provider, get_file_registry_repo
+from services.file_registry_workflow import claim_file_for_processing
 from core.enums import FileStatus
 from crud.base import BaseRepository
 from core.storage import StorageProvider
@@ -161,6 +162,10 @@ def process_file(
     repo: BaseRepository = Depends(get_file_registry_repo),
 ):
     """Queue async ETL via Celery using the user-confirmed schema."""
+    if claim_file_for_processing(db, file_id) == 1:
+        task = process_patient_file.delay(file_id, body.proposed_schema)
+        return {"file_id": file_id, "task_id": task.id, "status": "PROCESSING"}
+
     file_records = repo.get_by_field(
         db=db,
         field_name="file_id",
@@ -168,6 +173,8 @@ def process_file(
     )
     if not file_records:
         raise HTTPException(status_code=404, detail="File not found in registry")
-
-    task = process_patient_file.delay(file_id, body.proposed_schema)
-    return {"file_id": file_id, "task_id": task.id, "status": "PROCESSING"}
+    st = file_records[0].status
+    raise HTTPException(
+        status_code=409,
+        detail=f"File is not eligible for processing (current status: {st})",
+    )

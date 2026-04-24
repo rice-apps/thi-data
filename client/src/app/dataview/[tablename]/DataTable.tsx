@@ -10,14 +10,72 @@ import { Modal, ModalBody, ModalFooter } from '@/components/Modal';
 import { Button } from '@/components/Button';
 import { Spinner } from '@/components/Spinner';
 import { SearchInput } from '@/components/SearchInput';
-import type { TableRow, CellError, PaginationParams } from '@/types';
+import type {
+  TableRow,
+  CellError,
+  PaginationParams,
+  TableSchemaColumn,
+} from '@/types';
 import { formatValue } from '@/utils/formatters';
 
 type DataTableProps = {
   tablename: string;
   initialData: TableRow[];
-  columns: string[];
+  columns: TableSchemaColumn[];
 };
+
+function formValueToPayload(raw: unknown): string | number {
+  const trimmed = String(raw ?? '').trim();
+  if (
+    trimmed !== '' &&
+    !isNaN(Number(trimmed)) &&
+    trimmed === Number(trimmed).toString()
+  ) {
+    return Number(trimmed);
+  }
+  return trimmed;
+}
+
+const PAYLOAD_SKIP_COLUMNS = new Set(['id', 'original_csv_row_id']);
+
+function rowMutationKey(row: TableRow): string | number | undefined {
+  if (
+    row.original_csv_row_id !== undefined &&
+    row.original_csv_row_id !== null
+  ) {
+    return row.original_csv_row_id as string | number;
+  }
+  if (row.id !== undefined && row.id !== null) {
+    return row.id as string | number;
+  }
+  return undefined;
+}
+
+function payloadForColumns(
+  columns: TableSchemaColumn[],
+  formData: TableRow
+): TableRow {
+  const payload: TableRow = {};
+  for (const col of columns) {
+    const key = col.name;
+    if (PAYLOAD_SKIP_COLUMNS.has(key)) continue;
+    payload[key] = formValueToPayload(formData[key]);
+  }
+  return payload;
+}
+
+/** Main row cleared bad values to null/empty; align with server merge_corruption_pairs. */
+function isMissingForCorruptionCell(val: unknown): boolean {
+  if (val == null) return true;
+  if (typeof val === 'string' && val.trim() === '') return true;
+  return false;
+}
+
+function rowHasCorruptionHighlight(row: TableRow): boolean {
+  if (row._is_corrupted === true) return true;
+  const ctx = row._error_context;
+  return !!(ctx && Object.keys(ctx).length > 0);
+}
 
 export default function DataTable({
   tablename,
@@ -34,8 +92,17 @@ export default function DataTable({
   const [initialLoading, setInitialLoading] = useState(false);
 
   const [search, setSearch] = useState('');
-  const [selectedColumn, setSelectedColumn] = useState(columns[0] || 'id');
+  const [selectedColumn, setSelectedColumn] = useState(
+    columns[0]?.name || 'id'
+  );
   const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(() => {
+    const names = columns.map((c) => c.name);
+    if (names.length > 0 && !names.includes(selectedColumn)) {
+      setSelectedColumn(names[0]);
+    }
+  }, [columns, selectedColumn]);
 
   const [modalState, setModalState] = useState<{
     type: 'add' | 'edit' | 'delete' | 'resolve' | null;
@@ -47,6 +114,7 @@ export default function DataTable({
   const [submitting, setSubmitting] = useState(false);
 
   const observerTarget = useRef<HTMLDivElement>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
   const isFirstRender = useRef(true);
 
   // Debounce search input
@@ -128,8 +196,12 @@ export default function DataTable({
     showError,
   ]);
 
-  // Infinite scroll observer
+  // Infinite scroll: observe sentinel within the grid scrollport (not the viewport)
   useEffect(() => {
+    const root = tableScrollRef.current;
+    const element = observerTarget.current;
+    if (!root || !element) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
         if (
@@ -141,15 +213,12 @@ export default function DataTable({
           loadMore();
         }
       },
-      { threshold: 1.0 }
+      { root, rootMargin: '120px', threshold: 0 }
     );
 
-    const element = observerTarget.current;
-    if (element) observer.observe(element);
-    return () => {
-      if (element) observer.unobserve(element);
-    };
-  }, [loadMore, hasMore, loading, initialLoading]);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [loadMore, hasMore, loading, initialLoading, data.length, columns.length]);
 
   const refreshData = async () => {
     setPage(1);
@@ -172,7 +241,7 @@ export default function DataTable({
 
   const handleAdd = () => {
     const emptyForm: TableRow = {};
-    columns.forEach((col) => (emptyForm[col] = ''));
+    columns.forEach((col) => (emptyForm[col.name] = ''));
     setFormData(emptyForm);
     setModalState({ type: 'add' });
   };
@@ -198,25 +267,20 @@ export default function DataTable({
 
   const handleAddSubmit = async () => {
     const emptyFields = columns.filter((col) => {
-      const val = formData[col];
+      const val = formData[col.name];
       return val === undefined || val === null || String(val).trim() === '';
     });
 
     if (emptyFields.length > 0) {
-      showError(`Please fill in all fields: ${emptyFields.join(', ')}`);
+      showError(
+        `Please fill in all fields: ${emptyFields.map((c) => c.name).join(', ')}`
+      );
       return;
     }
 
     setSubmitting(true);
     try {
-      const payload: TableRow = {};
-      Object.entries(formData).forEach(([key, value]) => {
-        const trimmed = String(value).trim();
-        payload[key] =
-          !isNaN(Number(trimmed)) && trimmed === Number(trimmed).toString()
-            ? Number(trimmed)
-            : trimmed;
-      });
+      const payload = payloadForColumns(columns, formData);
 
       await dataService.createRow(tablename, payload);
       await refreshData();
@@ -231,15 +295,15 @@ export default function DataTable({
 
   const handleEditSubmit = async () => {
     if (!modalState.row) return;
+    const rowId = rowMutationKey(modalState.row);
+    if (rowId === undefined) {
+      showError('Cannot update row: missing row key.');
+      return;
+    }
     setSubmitting(true);
     try {
-      const payload = { ...formData };
-      delete payload.id;
-      await dataService.updateRow(
-        tablename,
-        modalState.row.id as string,
-        payload
-      );
+      const payload = payloadForColumns(columns, formData);
+      await dataService.updateRow(tablename, rowId, payload);
       await refreshData();
       closeModal();
       showSuccess('Row updated successfully!');
@@ -252,9 +316,14 @@ export default function DataTable({
 
   const handleDeleteConfirm = async () => {
     if (!modalState.row) return;
+    const rowId = rowMutationKey(modalState.row);
+    if (rowId === undefined) {
+      showError('Cannot delete row: missing row key.');
+      return;
+    }
     setSubmitting(true);
     try {
-      await dataService.deleteRow(tablename, modalState.row.id as string);
+      await dataService.deleteRow(tablename, rowId);
       await refreshData();
       closeModal();
       showSuccess('Row deleted successfully!');
@@ -267,16 +336,21 @@ export default function DataTable({
 
   const handleResolveSubmit = async () => {
     if (!modalState.row || !modalState.field) return;
+    const rowId = rowMutationKey(modalState.row);
+    if (rowId === undefined) {
+      showError('Cannot resolve: missing row key.');
+      return;
+    }
     setSubmitting(true);
     try {
-      await dataService.updateRow(tablename, modalState.row.id as string, {
+      await dataService.updateRow(tablename, rowId, {
         [modalState.field]: resolveValue,
       });
 
-      // Optimistic UI update
+      const targetKey = rowId;
       setData((prev) =>
         prev.map((r) => {
-          if (r.id !== modalState.row!.id) return r;
+          if (rowMutationKey(r) !== targetKey) return r;
           const updatedContext = { ...r._error_context };
           delete updatedContext[modalState.field!];
           const stillCorrupted = Object.keys(updatedContext).length > 0;
@@ -300,7 +374,7 @@ export default function DataTable({
 
   const renderCell = (row: TableRow, col: string) => {
     const cellError = row._error_context?.[col];
-    const isCellCorrupted = row[col] == null && !!cellError;
+    const isCellCorrupted = isMissingForCorruptionCell(row[col]) && !!cellError;
 
     if (isCellCorrupted) {
       return (
@@ -353,20 +427,31 @@ export default function DataTable({
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
+          <div
+            ref={tableScrollRef}
+            className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-15rem)] [scrollbar-gutter:stable]"
+          >
+            <table className="w-full min-w-max">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  {columns.map((header) => (
+                <tr className="border-b border-slate-200">
+                  {columns.map(({ name, type }) => (
                     <th
-                      key={header}
-                      className="px-6 py-4 text-left text-sm font-semibold text-slate-600 whitespace-nowrap"
+                      key={name}
+                      className="px-6 py-4 text-left text-sm whitespace-nowrap align-bottom sticky top-0 z-20 bg-slate-50"
                     >
-                      {header}
+                      <div className="font-semibold text-slate-700">{name}</div>
+                      {type ? (
+                        <div className="text-xs font-normal text-slate-400 font-mono mt-0.5">
+                          {type}
+                        </div>
+                      ) : null}
                     </th>
                   ))}
-                  <th className="px-6 py-4 text-right text-sm font-semibold text-slate-600 w-24">
-                    Actions
+                  <th
+                    scope="col"
+                    className="px-2.5 py-4 w-[5.25rem] min-w-[5.25rem] text-right align-bottom sticky top-0 right-0 z-30 bg-slate-50 border-l border-slate-200 shadow-[-4px_0_10px_-6px_rgba(15,23,42,0.14)]"
+                  >
+                    <span className="sr-only">Row actions</span>
                   </th>
                 </tr>
               </thead>
@@ -382,47 +467,65 @@ export default function DataTable({
                   </tr>
                 ) : (
                   data.map((row, rowIndex) => {
-                    const isCorrupted = row._is_corrupted === true;
+                    const isCorrupted = rowHasCorruptionHighlight(row);
+                    const rk = rowMutationKey(row);
+                    const rowKey =
+                      rk !== undefined ? String(rk) : `row-${rowIndex}`;
                     return (
                       <tr
-                        key={(row.id as React.Key) ?? rowIndex}
+                        key={rowKey}
                         className={`transition-colors group ${
                           isCorrupted
-                            ? 'bg-red-50 border-l-4 border-red-400 hover:bg-red-100'
-                            : 'hover:bg-slate-50'
+                            ? 'bg-red-50 hover:bg-red-100 focus-within:bg-red-100'
+                            : 'hover:bg-slate-50 focus-within:bg-slate-50'
                         }`}
                       >
-                        {columns.map((col) => {
-                          const cellError = row._error_context?.[col];
+                        {columns.map((col, colIndex) => {
+                          const key = col.name;
+                          const cellError = row._error_context?.[key];
                           const isCellCorrupted =
-                            row[col] == null && !!cellError;
+                            isMissingForCorruptionCell(row[key]) && !!cellError;
                           return (
                             <td
-                              key={col}
+                              key={key}
                               className={`px-6 py-4 text-sm whitespace-nowrap ${
+                                colIndex === 0 && isCorrupted
+                                  ? 'border-l-4 border-l-red-400'
+                                  : ''
+                              } ${
                                 isCellCorrupted
                                   ? 'text-red-600'
-                                  : row[col] != null
+                                  : row[key] != null
                                     ? 'text-slate-700'
                                     : 'text-slate-400 italic'
                               }`}
                             >
-                              {renderCell(row, col)}
+                              {renderCell(row, key)}
                             </td>
                           );
                         })}
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <td
+                          className={`pl-2 pr-2.5 py-4 text-right whitespace-nowrap sticky right-0 z-10 border-l border-slate-100 shadow-[-4px_0_10px_-6px_rgba(15,23,42,0.1)] ${
+                            isCorrupted
+                              ? 'bg-red-50 group-hover:bg-red-100 group-focus-within:bg-red-100'
+                              : 'bg-white group-hover:bg-slate-50 group-focus-within:bg-slate-50'
+                          }`}
+                        >
+                          <div
+                            className="flex justify-end items-center gap-1 transition-opacity duration-150 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100"
+                          >
                             <ActionButton
                               icon="edit"
                               onClick={() => handleEdit(row)}
                               title="Edit"
+                              tone="subtle"
                             />
                             <ActionButton
                               icon="delete"
                               onClick={() => handleDelete(row)}
                               title="Delete"
                               variant="danger"
+                              tone="subtle"
                             />
                           </div>
                         </td>
@@ -432,13 +535,13 @@ export default function DataTable({
                 )}
               </tbody>
             </table>
-          </div>
 
-          <div ref={observerTarget} className="p-6 text-center">
-            {(loading || initialLoading) && <Spinner />}
-            {!hasMore && data.length > 0 && (
-              <span className="text-slate-400 text-sm">End of results</span>
-            )}
+            <div ref={observerTarget} className="p-6 text-center">
+              {(loading || initialLoading) && <Spinner />}
+              {!hasMore && data.length > 0 && (
+                <span className="text-slate-400 text-sm">End of results</span>
+              )}
+            </div>
           </div>
         </div>
       </main>
@@ -453,21 +556,28 @@ export default function DataTable({
         >
           <ModalBody className="space-y-4">
             {columns.map((col) => (
-              <div key={col}>
+              <div key={col.name}>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  {col} <span className="text-red-500">*</span>
+                  {col.name}
+                  {col.type ? (
+                    <span className="text-slate-400 font-normal">
+                      {' '}
+                      · {col.type}
+                    </span>
+                  ) : null}{' '}
+                  <span className="text-red-500">*</span>
                 </label>
                 <input
-                  value={String(formData[col] ?? '')}
+                  value={String(formData[col.name] ?? '')}
                   onChange={(e) =>
-                    setFormData({ ...formData, [col]: e.target.value })
+                    setFormData({ ...formData, [col.name]: e.target.value })
                   }
                   className={`w-full px-4 py-2 text-slate-700 bg-slate-50 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[${COLORS.PRIMARY}]/30 focus:border-[${COLORS.PRIMARY}] focus:bg-white transition-all duration-200 ${
-                    String(formData[col] ?? '').trim() === ''
+                    String(formData[col.name] ?? '').trim() === ''
                       ? 'border-red-300'
                       : 'border-slate-200'
                   }`}
-                  placeholder={`Enter ${col}`}
+                  placeholder={`Enter ${col.name}`}
                 />
               </div>
             ))}
@@ -526,7 +636,7 @@ function Header({
   onSearchChange,
 }: {
   tablename: string;
-  columns: string[];
+  columns: TableSchemaColumn[];
   selectedColumn: string;
   onColumnChange: (col: string) => void;
   search: string;
@@ -572,8 +682,8 @@ function Header({
               className={`appearance-none pl-3 pr-8 py-2.5 h-full text-sm bg-white border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-[${COLORS.PRIMARY}]/30 focus:border-[${COLORS.PRIMARY}] text-slate-700 cursor-pointer`}
             >
               {columns.map((col) => (
-                <option key={col} value={col}>
-                  {col}
+                <option key={col.name} value={col.name}>
+                  {col.type ? `${col.name} · ${col.type}` : col.name}
                 </option>
               ))}
             </select>
@@ -610,16 +720,28 @@ function ActionButton({
   onClick,
   title,
   variant = 'default',
+  tone = 'default',
 }: {
   icon: 'edit' | 'delete';
   onClick: () => void;
   title: string;
   variant?: 'default' | 'danger';
+  tone?: 'default' | 'subtle';
 }) {
-  const hoverClass =
+  const solidClass =
     variant === 'danger'
-      ? 'hover:text-red-600 hover:bg-red-50'
-      : `hover:text-[${COLORS.PRIMARY}] hover:bg-blue-50`;
+      ? 'text-red-700 border-red-200 bg-white hover:bg-red-50'
+      : 'text-slate-800 border-slate-300 bg-white hover:bg-slate-50';
+
+  const subtleClass =
+    variant === 'danger'
+      ? 'text-red-600/85 border-transparent bg-transparent shadow-none hover:border-red-200/90 hover:bg-red-50/90 hover:text-red-700 focus-visible:ring-red-400/35'
+      : 'text-slate-500 border-transparent bg-transparent shadow-none hover:border-slate-200/80 hover:bg-slate-100/80 hover:text-slate-800 focus-visible:ring-slate-400/40';
+
+  const surfaceClass = tone === 'subtle' ? subtleClass : solidClass;
+  const paddingSize = tone === 'subtle' ? 'p-1.5' : 'p-2';
+  const rounding = tone === 'subtle' ? 'rounded-md' : 'rounded-lg';
+  const shadow = tone === 'subtle' ? '' : 'shadow-sm';
 
   const iconPath =
     icon === 'edit'
@@ -628,9 +750,14 @@ function ActionButton({
 
   return (
     <button
-      onClick={onClick}
-      className={`p-2 text-slate-500 ${hoverClass} rounded-lg transition-colors`}
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={`${paddingSize} ${rounding} border transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-0 ${shadow} ${surfaceClass}`}
       title={title}
+      aria-label={title}
     >
       <svg
         className="w-4 h-4"

@@ -3,7 +3,7 @@ Unit tests for the dlt stream / load logic.
 
 Tests Arrow table extraction from DuckDB, pipeline invocation, schema
 evolution conflicts, Celery task failure handling on network errors,
-and Arrow-to-Postgres type coercion.
+and DLT pipeline wiring.
 
 All tests are self-contained — they mock dlt, Celery, and Postgres so
 no live services are required.
@@ -13,7 +13,18 @@ import importlib
 import os
 import sys
 import pytest
+from contextlib import contextmanager
 from unittest.mock import patch, MagicMock
+from celery.exceptions import MaxRetriesExceededError
+
+
+@contextmanager
+def _mock_update_file_status():
+    m = MagicMock()
+    with patch("celery_task.update_file_status", m), patch(
+        "services.etl_success_orchestration.update_file_status", m
+    ):
+        yield m
 
 import duckdb
 import pyarrow as pa
@@ -307,7 +318,7 @@ class TestNetworkFailurePersistence:
         mock_get_db_ctx.side_effect = lambda: fake_db_context().__enter__() and None or fake_db_context()
         mock_get_db_ctx.return_value = fake_db_context()
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with patch("core.deps.get_file_registry_repo") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
@@ -321,11 +332,15 @@ class TestNetworkFailurePersistence:
                 "connection to server timed out"
             )
 
-            # Call the underlying run method directly to bypass autoretry.
-            with pytest.raises(ConnectionError, match="timed out"):
-                process_patient_file._orig_run(
-                    "file-123", {"age": "INTEGER"}
-                )
+            with patch.object(
+                process_patient_file,
+                "retry",
+                side_effect=MaxRetriesExceededError(),
+            ):
+                with pytest.raises(ConnectionError, match="timed out"):
+                    process_patient_file.run(
+                        "file-123", {"age": "INTEGER"}
+                    )
 
         # Status should have been set to FAILED
         mock_update_status.assert_any_call(
@@ -357,7 +372,7 @@ class TestNetworkFailurePersistence:
 
         mock_get_db_ctx.return_value = fake_db_context()
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with patch("core.deps.get_file_registry_repo") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
@@ -368,10 +383,15 @@ class TestNetworkFailurePersistence:
 
             mock_process.side_effect = RuntimeError("disk full")
 
-            with pytest.raises(RuntimeError):
-                process_patient_file._orig_run(
-                    "file-456", {"id": "INTEGER"}
-                )
+            with patch.object(
+                process_patient_file,
+                "retry",
+                side_effect=MaxRetriesExceededError(),
+            ):
+                with pytest.raises(RuntimeError):
+                    process_patient_file.run(
+                        "file-456", {"id": "INTEGER"}
+                    )
 
         # Extract the status values in order
         status_calls = [
@@ -381,33 +401,38 @@ class TestNetworkFailurePersistence:
         assert status_calls[-1] == "FAILED"
 
     def test_celery_task_has_retry_config(self):
-        """Verify the task decorator configures auto-retry correctly."""
+        """Verify the task uses explicit self.retry (no autoretry_for on the decorator)."""
         from celery_task import process_patient_file
 
         assert process_patient_file.max_retries == 3
-        assert process_patient_file.autoretry_for == (Exception,)
-        assert process_patient_file.retry_backoff is True
+        assert not getattr(process_patient_file, "autoretry_for", None)
 
-    @patch("celery_task.notify_frontend")
-    @patch("celery_task._refresh_api_server")
+    @patch("services.etl_success_orchestration.publish_thi_event")
+    @patch("services.etl_success_orchestration.refresh_api_server_schema")
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
-    @patch("celery_task.update_file_status")
     @patch("celery_task.run_etl")
     def test_success_path_calls_refresh_then_notify(
         self,
         mock_process,
-        mock_update_status,
         mock_get_db_ctx,
         mock_get_storage,
         mock_refresh,
-        mock_notify,
+        mock_publish,
     ):
-        """On success, _refresh_api_server must be called BEFORE notify_frontend.
-        This ensures the API server's Base.classes is updated before
-        the frontend navigates to the new table."""
-        from contextlib import contextmanager
+        """On success, schema refresh must run BEFORE the success NOTIFY payload."""
         from celery_task import process_patient_file
+
+        call_order = []
+
+        def track_refresh(*_a, **_k):
+            call_order.append("refresh")
+
+        def track_publish(*_a, **_k):
+            call_order.append("publish")
+
+        mock_refresh.side_effect = track_refresh
+        mock_publish.side_effect = track_publish
 
         mock_db = MagicMock()
         mock_record = MagicMock()
@@ -419,7 +444,7 @@ class TestNetworkFailurePersistence:
 
         mock_get_db_ctx.return_value = fake_db_context()
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with _mock_update_file_status(), patch("core.deps.get_file_registry_repo") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
@@ -432,42 +457,34 @@ class TestNetworkFailurePersistence:
             mock_get_storage.return_value = mock_storage
             mock_process.return_value = 0
 
-            result = process_patient_file._orig_run(
+            result = process_patient_file.run(
                 "file-ok", {"name": "VARCHAR"}
             )
 
         assert result["status"] == "SUCCESS"
 
-        # Verify ordering via call_args_list indices
         mock_refresh.assert_called_once()
-        mock_notify.assert_called_once()
+        mock_publish.assert_called_once()
+        assert call_order == ["refresh", "publish"]
 
-        # Ensure refresh was called BEFORE notify
-        # (mock manager tracks global ordering, but we can check that
-        #  both were called and refresh didn't raise)
-        notify_payload = mock_notify.call_args[0][0]
+        notify_payload = mock_publish.call_args[0][0]
         assert notify_payload["type"] == "celery_success"
         assert notify_payload["file_id"] == "file-ok"
 
-    @patch("celery_task.notify_frontend")
-    @patch("celery_task._refresh_api_server")
+    @patch("celery_task.publish_thi_event")
+    @patch("services.etl_success_orchestration.refresh_api_server_schema")
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
-    @patch("celery_task.update_file_status")
     @patch("celery_task.run_etl")
     def test_refresh_failure_prevents_success_notify(
         self,
         mock_process,
-        mock_update_status,
         mock_get_db_ctx,
         mock_get_storage,
         mock_refresh,
-        mock_notify,
+        mock_failure_publish,
     ):
-        """If _refresh_api_server raises, the celery_success notification must
-        NOT be sent.  The error handler will correctly send a celery_failed
-        notification instead."""
-        from contextlib import contextmanager
+        """If schema refresh raises, celery_success must not be sent; failure path notifies once."""
         from celery_task import process_patient_file
 
         mock_db = MagicMock()
@@ -480,7 +497,7 @@ class TestNetworkFailurePersistence:
 
         mock_get_db_ctx.return_value = fake_db_context()
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with _mock_update_file_status(), patch("core.deps.get_file_registry_repo") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
@@ -495,18 +512,22 @@ class TestNetworkFailurePersistence:
 
             mock_refresh.side_effect = RuntimeError("API server unreachable")
 
-            with pytest.raises(RuntimeError, match="API server unreachable"):
-                process_patient_file._orig_run(
-                    "file-no-refresh", {"age": "INTEGER"}
-                )
+            with patch.object(
+                process_patient_file,
+                "retry",
+                side_effect=MaxRetriesExceededError(),
+            ):
+                with pytest.raises(RuntimeError, match="API server unreachable"):
+                    process_patient_file.run(
+                        "file-no-refresh", {"age": "INTEGER"}
+                    )
 
-        # A failure notification IS sent (correct behavior) but NO success notification
-        assert mock_notify.call_count == 1
-        sent_payload = mock_notify.call_args[0][0]
+        assert mock_failure_publish.call_count == 1
+        sent_payload = mock_failure_publish.call_args[0][0]
         assert sent_payload["type"] == "celery_failed"
         assert "API server unreachable" in sent_payload["error"]
 
-    @patch("celery_task.notify_frontend")
+    @patch("celery_task.publish_thi_event")
     @patch("celery_task.get_storage_provider")
     @patch("celery_task.get_db_context")
     @patch("celery_task.update_file_status")
@@ -517,11 +538,10 @@ class TestNetworkFailurePersistence:
         mock_update_status,
         mock_get_db_ctx,
         mock_get_storage,
-        mock_notify,
+        mock_publish,
     ):
-        """In the error path, if notify_frontend raises, the original
+        """In the error path, if publish_thi_event raises, the original
         error should still propagate (not the notification error)."""
-        from contextlib import contextmanager
         from celery_task import process_patient_file
 
         mock_db = MagicMock()
@@ -534,7 +554,7 @@ class TestNetworkFailurePersistence:
 
         mock_get_db_ctx.return_value = fake_db_context()
 
-        with patch("celery_task.get_file_registry_repo") as mock_get_repo:
+        with patch("core.deps.get_file_registry_repo") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.get_by_field.return_value = [mock_record]
             mock_get_repo.return_value = mock_repo
@@ -546,18 +566,20 @@ class TestNetworkFailurePersistence:
             )
             mock_get_storage.return_value = mock_storage
 
-            # ETL fails
             mock_process.side_effect = ValueError("bad data")
-            # Notification also fails
-            mock_notify.side_effect = ConnectionError("pg down")
+            mock_publish.side_effect = ConnectionError("pg down")
 
-            with pytest.raises(ValueError, match="bad data"):
-                process_patient_file._orig_run(
-                    "file-double-fail", {"id": "INTEGER"}
-                )
+            with patch.object(
+                process_patient_file,
+                "retry",
+                side_effect=MaxRetriesExceededError(),
+            ):
+                with pytest.raises(ValueError, match="bad data"):
+                    process_patient_file.run(
+                        "file-double-fail", {"id": "INTEGER"}
+                    )
 
-        # The notification was attempted but its error was swallowed
-        mock_notify.assert_called_once()
+        mock_publish.assert_called_once()
 
 
 # Type Coercion Mapping tests

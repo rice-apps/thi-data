@@ -18,7 +18,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 server_dir = os.path.dirname(current_dir)
 sys.path.insert(0, server_dir)
 
-from core.deps import get_db
+from core.deps import get_db, get_db_context
 import core.database as db_module
 from core.database import reflect_db
 from crud.base import BaseRepository, model_to_dict
@@ -41,27 +41,22 @@ def setup_target_row():
     if not target_model:
         pytest.fail(f"Test setup failed: Could not find model for '{TARGET_TABLE}'")
 
-    db = next(get_db())
-    target_item = None
-
-    try:
+    target_id = None
+    with get_db_context() as db:
         target_item = BaseRepository(target_model).create(db, {
             "first_name": "Corrupted",
             "last_name": "TestUser",
             "age": None
         })
-        db.commit()
-        db.refresh(target_item)
-        yield target_item.id
-    finally:
-        try:
-            if target_item:
-                BaseRepository(target_model).delete(db, target_item.id)
-                db.commit()
-        except Exception as e:
-            db.rollback()
-            print(f"Error during teardown: {e}")
-        db.close()
+        target_id = target_item.id
+
+    yield target_id
+
+    try:
+        with get_db_context() as db:
+            BaseRepository(target_model).delete(db, target_id)
+    except Exception as e:
+        print(f"Error during teardown: {e}")
 
 
 # Resolve (Heal) Endpoint tests
@@ -146,12 +141,11 @@ class TestResolveEndpoint:
 # Type Validation unit tests
 
 class TestTypeValidation:
-    """Unit tests for the _validate_and_cast helper function."""
+    """Unit tests for coerce_value_for_column (reflected SQLAlchemy types)."""
 
     def setup_method(self):
-        """Import the validation function."""
-        from api.corrupted_rows import _validate_and_cast
-        self.validate = _validate_and_cast
+        from services.reflected_columns import coerce_value_for_column
+        self.validate = coerce_value_for_column
 
     def test_integer_valid(self):
         assert self.validate("age", "25", Integer()) == 25
@@ -311,8 +305,10 @@ class TestResolveRequestBody:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         client = TestClient(app)
@@ -332,8 +328,10 @@ class TestResolveRequestBody:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_record = MagicMock()
@@ -356,9 +354,15 @@ class TestResolveRequestBody:
             mock_pk_col.key = "id"
             mock_mapper.primary_key = [mock_pk_col]
 
-            with patch("api.corrupted_rows.sa_inspect", return_value=mock_mapper):
+            with patch(
+                "services.corrupted_row_resolution.sa_inspect",
+                return_value=mock_mapper,
+            ):
                 mock_record.name = "old_value"
-                with patch("api.corrupted_rows.model_to_dict", return_value={"id": 1, "name": "Alice"}):
+                with patch(
+                    "services.corrupted_row_resolution.model_to_dict",
+                    return_value={"id": 1, "name": "Alice"},
+                ):
                     client = TestClient(app)
                     resp = client.patch("/api/test_table/1/resolve", json={
                         "corrections": {"name": "Alice"}
@@ -373,12 +377,11 @@ class TestResolveRequestBody:
 
 
 class TestResolveNoDoubleCommit:
-    """resolve_corrupted_row should use flush(), not commit()."""
+    """Resolution service should flush ORM state but not commit the session."""
 
     def test_no_explicit_commit_call(self):
-        """Verify the function source uses db.flush() not db.commit()."""
         import inspect
-        from api.corrupted_rows import resolve_corrupted_row
-        source = inspect.getsource(resolve_corrupted_row)
-        assert "db.commit()" not in source
-        assert "db.flush()" in source
+        from services.corrupted_row_resolution import CorruptedRowResolutionService
+        source = inspect.getsource(CorruptedRowResolutionService.resolve)
+        assert "commit()" not in source
+        assert "flush()" in source

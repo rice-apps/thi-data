@@ -1,16 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from core.logging_config import configure_logging
 from core.deps import init_app_services
 from api import metadata, tables, rows, reflect, validation, corrupted_rows, files, events
 import core.config as config
-import logging
 
-# Centralized root logger config — all getLogger(__name__) loggers inherit this
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s:%(lineno)d - %(levelname)s - %(message)s",
-)
+configure_logging()
 
 origins = [
     config.settings.ORIGIN_URL
@@ -22,7 +18,13 @@ async def lifespan(app: FastAPI):
     init_app_services()
     yield
 
-app = FastAPI(lifespan=lifespan)
+# Docs/OpenAPI under /api/* so the nginx API prefix and Makefile URLs stay consistent.
+app = FastAPI(
+    lifespan=lifespan,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+)
 
 app.add_middleware(
     CORSMiddleware,

@@ -118,26 +118,13 @@ export function Toast({
         ${isVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4'}
       `}
     >
-      {icon}
-      <span>{message}</span>
       <button
         onClick={handleClose}
-        className="ml-2 p-1 hover:bg-white/20 rounded-lg transition-colors"
+        className="p-1 hover:bg-white/20 rounded-lg transition-colors flex-shrink-0"
       >
-        <svg
-          className="w-4 h-4"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M6 18L18 6M6 6l12 12"
-          />
-        </svg>
+        {icon}
       </button>
+      <span>{message}</span>
     </div>
   );
 }

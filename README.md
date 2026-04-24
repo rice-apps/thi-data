@@ -1,107 +1,252 @@
-# thi-data
-Data Warehouse for the Texas Hearing Institute.
+# Texas Hearing Institute Data Warehouse (thi-data)
 
-This repository provides a Data Warehouse designed to ingest, validate, and store patient and organizational data. The system is accessed via Power BI for reporting and analytics.
-
-## Prerequisites
-The system is orchestrated using the **Make utility**, which provides a single entry point for all major operations. Before you begin, ensure you have the following installed:
-*   **Docker Desktop** (or equivalent): Required for running the core infrastructure.
-*   **Make**: Orchestration utility (pre-installed on macOS and most Linux distributions).
-*   **Node.js (v18+)**: Required only for local frontend development.
-*   **Python (v3.11+)**: Required only for local backend development.
+This repository provides a self-hosted Data Warehouse designed to ingest, validate, and store patient and organizational data. It serves as the primary source of truth for the Texas Hearing Institute, with a schema optimized for direct integration with Power BI for clinical reporting and advanced analytics.
 
 ---
 
-## Production Deployment (On-Prem)
-For clients and operators deploying the full system, use the following command to launch the production-ready background stack:
+## Quick Start Access
+
+Once the system is deployed, **visit the Web Portal at: http://localhost**
+
+*   **Local Access**: [http://localhost](http://localhost)
+*   **Organizational Access**: Replace `localhost` with the server's local IP address (e.g., `http://10.0.0.50`).
+*   **Documentation & Monitoring**:
+    *   **API Specs**: `http://localhost/api/docs`
+    *   **Task Queue**: `http://localhost:15672` (User: `guest` / Pass: `guest`)
+
+---
+
+## Architectural Overview
+
+The system is composed of seven specialized microservices orchestrated via Docker. This architecture ensures high availability, data integrity, and background processing capabilities.
+
+### Application Services
+*   **Gateway (thi-proxy)**: An Nginx-based reverse proxy that handles all incoming traffic on Port 80, routing requests to either the Frontend or the API.
+*   **Frontend (thi-frontend)**: A Next.js web application for data management, file uploads, and warehouse monitoring.
+*   **API (thi-backend)**: A FastAPI server that orchestrates metadata, handles file registry logic, and communicates with the task queue.
+*   **Worker (thi-celery-worker)**: A dedicated Python worker that performs the "heavy lifting" of the ETL (Extract, Transform, Load) process, including schema validation and SQL generation.
+
+### Infrastructure Services
+*   **Warehouse (thi-db)**: A PostgreSQL 16 database instance optimized for analytical queries and Power BI connectivity.
+*   **Queue (thi-rabbitmq)**: An AMQP message broker that ensures reliable communication between the API and the background workers.
+*   **Storage (thi-seaweedfs)**: An S3-compatible object storage layer used for archiving raw data assets before they are transformed into the relational warehouse.
+
+---
+
+## System Requirements
+
+The following specifications are recommended for stable production operation within an organizational network.
+
+### Hardware Specifications
+| Resource | Minimum | Recommended |
+| :--- | :--- | :--- |
+| CPU | 2 Cores | 4 Cores+ |
+| RAM | 4 GB | 8 GB+ |
+| Storage | 10 GB | 50 GB+ (SSD preferred) |
+
+### Resource Consumption Profile
+*   **Standard Operation**: The idle stack consumes approximately 1.3 GB of RAM.
+*   **Peak Requirements**: During the Next.js build phase or large-scale data ingestion, memory usage may temporarily increase to 3-4 GB.
+
+---
+
+## Deployment Guide (On-Premise)
+
+The system is delivered as a containerized stack orchestrated by the Make utility. Ensure that Docker Desktop (or OrbStack) and the Make utility are installed on the host machine.
+
+### 1. Launch the System
+For a production-ready background deployment, execute:
 
 ```bash
 make deploy
 ```
 
-This command automatically initializes and starts the following services:
--   **Postgres 16**: The central relational database and primary data warehouse.
--   **RabbitMQ**: The message broker for asynchronous task processing.
--   **SeaweedFS**: S3-compatible local object storage for file persistence.
--   **FastAPI Backend**: The core API server providing the REST interface for schema validation and file management.
--   **Celery Worker**: The background processing engine that handles file validation and ETL.
+This command builds the required images, initializes all microservices, executes database migrations, and verifies the health of the API layer.
 
-### Health Checks and Monitoring
-Once the system is deployed, you can verify the health of the services using these interfaces:
--   **System Status**: Run `make ps` to view the status of all containers.
--   **API Documentation**: [http://localhost:8000/docs](http://localhost:8000/docs)
--   **Task Queue Dashboard**: [http://localhost:15672](http://localhost:15672) (guest / guest)
--   **Storage Explorer**: [http://localhost:8888](http://localhost:8888)
+### 2. Operational Monitoring
+*   **Service Status**: Run `make ps` to view the uptime and health status of all containers.
+*   **Resource Usage**: Run `docker compose top` to view real-time CPU and Memory consumption across the stack.
+*   **Live Logs**: Run `docker compose logs -f` for a combined stream of all application events.
 
 ---
 
-## Power BI Integration (Data Visualization)
-This system is optimized for use as a Data Warehouse for Power BI. To connect your reports to the warehouse, follow these steps:
+## Technical Configuration
 
-1.  **Open Power BI Desktop**.
-2.  Go to **Get Data** > **PostgreSQL Database**.
-3.  Enter the following connection details:
+Compose substitutes values from the repo-root **`.env`** (from **`.env.example`**) and from your shell. The tables below list the most common host-visible settings, their defaults, and which part of the stack uses them. For full detail (Better Auth, client/server files, image build args), see **Environment variables** at the end of this document.
 
-| Parameter | Value (Out-of-the-Box Defaults) |
-|-----------|----------------------------------|
-| **Server** | `localhost` (Or your server IP) |
-| **Database** | `postgres` |
-| **Authentication** | Use the **Database** tab |
-| **User** | `postgres` |
-| **Password** | `password` |
-| **Port** | `5432` |
+```bash
+PUBLIC_PORT=8080 DB_PORT=5433 make deploy
+```
 
-4.  Once connected, you will see the tables generated from your processed CSV/XLSX files. You can now build relationships and visualizations directly in Power BI.
+### Network & routing
+
+| Variable | Component | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `PUBLIC_PORT` | Proxy | Host port mapped to nginx (website and same-origin `/api` in the browser). | `80` |
+| `API_SUBPATH` | Proxy / frontend / backend | URL prefix for the API (nginx strips this and forwards to FastAPI). | `/api` |
+| `API_PORT` | Backend | Port FastAPI listens on **inside** the backend container; nginx reaches the backend on this port. | `8000` |
+
+### Infrastructure ports (host)
+
+| Variable | Component | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `DB_PORT` | Postgres | Host port for the database (e.g. Power BI, tools on the machine). | `5432` |
+| `DB_NAME` | Postgres | Primary database name. | `postgres` |
+| `DB_USER` | Postgres | Database user. | `postgres` |
+| `DB_PASSWORD` | Postgres | Database password. | `password` |
+| `RABBITMQ_PORT` | RabbitMQ | Host port for AMQP. | `5672` |
+| `RABBITMQ_MGMT_PORT` | RabbitMQ | Host port for the management UI. | `15672` |
+| `STORAGE_S3_PORT` | SeaweedFS | Host port for S3-compatible access. | `8333` |
+
+### Changing the public access port
+
+If port **80** is already in use, point the stack at a different host port:
+
+1. Open or create the repo-root **`.env`** (copy from **`.env.example`** if needed).
+2. Set **`PUBLIC_PORT`** (e.g. `PUBLIC_PORT=8080`). Compose maps **`${PUBLIC_PORT:-80}:80`** on the proxy service—you do not need to edit **`docker-compose.yml`** for this.
+3. Set **`BETTER_AUTH_URL`** to the URL users will type in the browser (include the non-default port), e.g. `http://localhost:8080` or `http://10.0.0.50:8080`.
+4. Run **`make deploy`** (or restart the stack) so containers pick up the new values.
 
 ---
 
-## Security and Customization
-The system is built to run immediately "out of the box" using the default credentials listed above, which are standard, dummy defaults.
+## Power BI Integration
 
-When preparing to deploy this to your organization's live environment, you must override these defaults directly within the `docker-compose.yml` file to secure the warehouse. You do not need to manage a separate `.env` file.
+The warehouse is optimized for direct connectivity with Power BI Desktop or Service.
 
-Open `docker-compose.yml` and update the default `postgres` and `password` variables across these three services:
-1.  **db**: Update `POSTGRES_USER` and `POSTGRES_PASSWORD`.
-2.  **backend**: Update `user` and `password` to match the new database credentials.
-3.  **celery_worker**: Update `user` and `password` to match the new database credentials.
+1.  Open **Power BI Desktop**.
+2.  Navigate to **Get Data** > **PostgreSQL Database**.
+3.  Provide the following connection parameters:
+
+| Parameter | Recommended Value |
+|-----------|-------------------|
+| Server | `localhost` (Or the server's local IP address) |
+| Database | `postgres` (Or the configured `DB_NAME`) |
+| Authentication | Select the **Database** tab |
+| Port | `5432` (Or the configured `DB_PORT`) |
+| Username | `postgres` (Or the configured `DB_USER`) |
+| Password | `password` (Or the configured `DB_PASSWORD`) |
+
+---
+
+## Security & Production Hardening
+
+Before deploying to a production organizational environment, the default credentials MUST be overridden inside the `docker-compose.yml` file.
+
+### Credential Synchronization
+The system automatically synchronizes credentials across the following service layers:
+*   **Database Cluster**: `DB_USER` and `DB_PASSWORD` are shared between the core database, the API, and the processing workers.
+*   **Message Broker**: `RABBITMQ_USER` and `RABBITMQ_PASS` are shared between the broker and its clients.
+*   **Storage Layer**: `STORAGE_KEY` and `STORAGE_SECRET` are shared between the file server and the ingestion engine.
 
 ---
 
 ## Development Workflows
-For developers wishing to contribute or modify the codebase, follow these steps.
 
-### 1. Installation
-Prepare your local machine by installing the necessary dependencies for both the frontend and backend:
+### 1. Environment Initialization
 ```bash
 make install
 ```
 
-### 2. Local Stack Execution
--   **Full Stack (Recommended)**: Starts everything in Docker.
-    ```bash
-    make dev
-    ```
--   **Hybrid Mode (Fastest iterations)**: Runs the infrastructure (DB/Queue/Storage) in Docker, but executes the API and Next.js processes directly on your host machine for optimized debugging and hot-reloading.
-    ```bash
-    make dev-local
-    ```
+### 2. Execution Modes
+*   **Full Stack**: `make dev` (Executes the entire stack within Docker).
+*   **Hybrid Development**: `make dev-local` (Executes the database and queue in Docker while running application code on the host machine).
 
-### 3. Testing
-All backend logic is covered by a comprehensive `pytest` suite.
+### 3. Verification
 ```bash
 make test
 ```
-This command ensures the infrastructure is healthy and executes the tests inside the backend container to ensure environment parity.
 
 ---
 
-## Makefile Reference Guide
-| Command | Primary Use Case | Action |
-|---------|------------------|--------|
-| `make deploy` | **Production Startup** | Launches the full background stack and waits for health checks. |
-| `make dev` | **Local Development** | Starts the full stack and the Next.js development server. |
-| `make dev-local` | **Active Coding** | Runs DB/MQ in Docker while services run on the host. |
-| `make test` | **Quality Assurance** | Executes the full test suite in the backend container. |
-| `make install` | **Setup** | Configures local npm and Python virtual environments. |
-| `make ps` | **Monitoring** | Shows the uptime and status of all system containers. |
-| `make down` | **Shutdown** | Stops and removes all containers, networks, and volumes. |
+## Environment variables
+
+| File | When |
+| :--- | :--- |
+| **`.env`** at repo root | Docker Compose and **`make dev`** (copy from **`.env.example`**). |
+| **`client/.env.local`** | Next.js running on your machine (copy from **`client/.env.example`**). |
+| **`server/.env`** | FastAPI / Celery on your machine (copy from **`server/.env.example`**; keys match **`server/core/config.py`**). |
+
+### Repo root `.env` (ports & public URLs)
+
+| Variable | Meaning |
+| :--- | :--- |
+| `PUBLIC_PORT` | Host port for the website (nginx → port 80 in the container). |
+| `API_SUBPATH` | URL prefix for the API (default `/api`). Nginx and the browser both use this path. |
+| `API_PORT` | Port FastAPI listens on **inside** Docker; nginx sends `/api` traffic here. |
+| `API_PUBLISH_HOST` | Which host address the API port is bound to on the machine (default `127.0.0.1`). |
+| `API_PUBLISH_PORT` | Which **host** port reaches FastAPI; **`make dev`** points Next at this. |
+
+### Repo root `.env` (database)
+
+| Variable | Meaning |
+| :--- | :--- |
+| `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Postgres user, password, and database name for the stack. |
+| `DB_PORT` | Postgres **on the host** (e.g. Power BI). Next may use this when building a DB URL. |
+| `DATABASE_URL` | Optional; full Postgres URL for Better Auth in **`thi-frontend`**. If unset, Next builds a URL from **`DB_*`**. |
+
+### Repo root `.env` (Better Auth / Next in Docker)
+
+| Variable | Meaning |
+| :--- | :--- |
+| `BETTER_AUTH_SECRET` | Signing secret; required when **building** the frontend image and when **running** it. |
+| `BETTER_AUTH_URL` | Public site URL **without a path** (e.g. `http://localhost`). Default uses `PUBLIC_PORT`. |
+| `NEXT_PUBLIC_BETTER_AUTH_URL` | Optional; overrides the browser auth client base. Empty = same origin as the page. |
+
+### Repo root `.env` (RabbitMQ & storage)
+
+| Variable | Meaning |
+| :--- | :--- |
+| `RABBITMQ_USER`, `RABBITMQ_PASS` | Broker login; backend and worker connect with these. |
+| `RABBITMQ_PORT`, `RABBITMQ_MGMT_PORT` | AMQP and management UI **on the host**. |
+| `STORAGE_KEY`, `STORAGE_SECRET` | Credentials for SeaweedFS / S3-style access. |
+| `STORAGE_S3_PORT`, `STORAGE_MASTER_PORT`, `STORAGE_FILER_PORT` | SeaweedFS services **on the host**. |
+
+### Set by Compose (reference only)
+
+You normally **do not** put these in **`.env`**; Compose or the Dockerfile sets them.
+
+| Variable | Role |
+| :--- | :--- |
+| `INTERNAL_API_URL` | On **`thi-frontend`**: base URL for server-side calls to FastAPI (`http://backend:…` + `API_SUBPATH`). |
+| `NEXT_PUBLIC_API_URL` | On **`thi-frontend`**: same value as **`API_SUBPATH`** for the browser. |
+| `RUNNING_IN_DOCKER` | On **`thi-frontend`**: `1` so SSR uses **`INTERNAL_API_URL`**. |
+| `DB_HOST` | On **`thi-frontend`**: Postgres hostname (default `db`). |
+| `BACKEND_PORT` | In **nginx** template env: same as **`API_PORT`**. |
+| Backend `user` / `password` / `host` / `port` / `dbname` | SQLAlchemy env for API and worker; Compose sets `host=db` and maps user/db from **`DB_*`**. |
+| `broker_url` | AMQP URL for API and worker; Compose builds it from **`RABBITMQ_*`**. |
+| `ORIGIN_URL` | On API/worker containers: CORS-related (**`config.py`** reads **`origin_url`**). |
+| `USE_S3`, `S3_ENDPOINT`, `S3_KEY`, `S3_SECRET`, `S3_BUCKET` | Object storage; in Compose **`S3_ENDPOINT`** is the SeaweedFS service. |
+| `API_SERVER_URL` | On **celery**: base URL to call the API (`http://backend:${API_PORT}`). |
+
+Optional: set **`DOCKER_CONTAINER=1`** instead of relying on **`RUNNING_IN_DOCKER`** for the same SSR API behavior in **`HttpDataService`**.
+
+### `client/.env.local` (Next on the host)
+
+| Variable | Meaning |
+| :--- | :--- |
+| `NEXT_PUBLIC_API_URL` | Browser path to the API (e.g. `/api`). |
+| `NEXT_DEV_PROXY_API_ORIGIN` | Full URL to FastAPI (e.g. `http://127.0.0.1:8000`) when the path above is relative. |
+| `NEXT_PUBLIC_BACKEND_ORIGIN` | Full URL to FastAPI for **SSE** (EventSource). |
+
+### `server/.env` (API / worker on the host)
+
+All keys are read in **`server/core/config.py`**. Common ones:
+
+| Variable | Meaning |
+| :--- | :--- |
+| `user`, `password`, `host`, `port`, `dbname` | Postgres for SQLAlchemy. |
+| `broker_url` | RabbitMQ URL. |
+| `origin_url` | CORS (**`Settings.ORIGIN_URL`**). |
+| `USE_S3`, `S3_ENDPOINT`, `S3_KEY`, `S3_SECRET`, `S3_BUCKET`, `S3_REGION` | Object storage. |
+| `API_SERVER_URL` | Worker → API (default `http://backend:8000`). |
+| `DLT_DESTINATION`, `DLT_DATASET`, `DUCKDB_TEMP_DIR` | ETL / DLT. |
+
+### Frontend Docker image (build & run)
+
+| Variable | Meaning |
+| :--- | :--- |
+| `BETTER_AUTH_SECRET` | Build **ARG** and runtime env (see above). |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Build **ARG**s; baked into the client bundle unless you override at build time. |
+| `NEXT_PUBLIC_API_URL` | Build-time default `/api`; Compose overwrites at runtime for the container. |
+| `NEXT_JS_DISABLE_ESLINT`, `NEXT_TELEMETRY_DISABLED` | Builder-only. |
+| `NODE_ENV`, `PORT`, `HOSTNAME` | Runtime Node process (`production`, `3000`, `0.0.0.0`). |

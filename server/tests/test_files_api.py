@@ -48,7 +48,7 @@ def _make_app():
 
     mock_db = MagicMock()
 
-    def override_get_db():
+    async def override_get_db():
         yield mock_db
 
     app.dependency_overrides[get_db] = override_get_db
@@ -295,6 +295,7 @@ class TestProcessFile:
 
     def test_success_dispatches_celery(self):
         app, mock_db = _make_app()
+        mock_db.execute.return_value = MagicMock(rowcount=1)
         mock_repo = MagicMock()
         mock_record = MagicMock()
         mock_record.object_key = "uploads/test.csv"
@@ -321,6 +322,7 @@ class TestProcessFile:
 
     def test_not_found(self):
         app, mock_db = _make_app()
+        mock_db.execute.return_value = MagicMock(rowcount=0)
         mock_repo = MagicMock()
         mock_repo.get_by_field.return_value = []
 
@@ -332,6 +334,23 @@ class TestProcessFile:
             json={"proposed_schema": {"age": "INTEGER"}},
         )
         assert resp.status_code == 404
+
+    def test_conflict_when_not_eligible(self):
+        app, mock_db = _make_app()
+        mock_db.execute.return_value = MagicMock(rowcount=0)
+        mock_repo = MagicMock()
+        mock_record = MagicMock()
+        mock_record.status = "PROCESSING"
+        mock_repo.get_by_field.return_value = [mock_record]
+        app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
+
+        client = TestClient(app)
+        resp = client.post(
+            "/api/files/f-1/process",
+            json={"proposed_schema": {"age": "INTEGER"}},
+        )
+        assert resp.status_code == 409
+        assert "PROCESSING" in resp.json()["detail"]
 
 
 # Check duplicate tests

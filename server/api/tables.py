@@ -2,14 +2,15 @@ from fastapi import APIRouter, HTTPException, Depends
 from crud.metadata import get_tables_metadata, get_database_size
 from typing import Any
 from sqlalchemy.orm import Session
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect
 import core.database as db_module
-from core.database import get_class, reflect_db
-from core.deps import get_db, get_model_class, get_internal_model_class, get_file_registry_model, _repo_cache
-from core.config import settings
+from core.database import get_class
+from core.deps import get_db, get_model_class, get_internal_model_class
 import logging
 
 from core.constants import UNLISTED_TABLES, HIDDEN_TABLE_SUFFIXES
+from services.reflected_columns import schema_columns_for_table
+from services.table_lifecycle import delete_user_table
 
 router = APIRouter()
 
@@ -29,7 +30,10 @@ def get_all_tables():
 
 
 def _is_visible(table_name: str) -> bool:
+    from core.constants import DLT_INTERNAL_TABLE_PREFIX
     if table_name in UNLISTED_TABLES:
+        return False
+    if table_name.startswith(DLT_INTERNAL_TABLE_PREFIX):
         return False
     return not any(table_name.endswith(s) for s in HIDDEN_TABLE_SUFFIXES)
 
@@ -63,11 +67,11 @@ def get_table_schema(
     model_class: Any = Depends(get_model_class)
 ) -> dict:
     """
-    Get the column names for a table (excluding 'id').
+    Get visible column names and display types for a table.
     """
     logger.info(f"Getting schema for table: {table_name}")
     mapper = inspect(model_class)
-    columns = [c.key for c in mapper.column_attrs if c.key not in ("id", "original_csv_row_id")]
+    columns = schema_columns_for_table(mapper)
     logger.info(f"Retrieved {len(columns)} columns for table {table_name}")
     return {"columns": columns}
 
@@ -80,26 +84,7 @@ def delete_table(table_name: str, db: Session = Depends(get_db)):
     if not get_class(table_name):
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found.")
 
-    dlt_schema = settings.DLT_DATASET
-    MetadataCreation = get_internal_model_class("metadata_creation")
-    MetadataUpdates = get_internal_model_class("metadata_updates")
-    FileRegistry = get_file_registry_model()
-
-    for record in db.query(MetadataCreation).filter(MetadataCreation.table_name == table_name).all():
-        db.query(MetadataUpdates).filter(MetadataUpdates.foreign_key == record.id).delete()
-        db.delete(record)
-
-    db.query(FileRegistry).filter(FileRegistry.target_table_name == table_name).delete()
-
-    db.execute(text(f'DROP TABLE IF EXISTS {dlt_schema}."{table_name}"'))
-    db.execute(text(f'DROP TABLE IF EXISTS {dlt_schema}."{table_name}__corrupted"'))
-
-    db.commit()
-    reflect_db()
-
-    _repo_cache.pop(table_name, None)
-    _repo_cache.pop(f"{table_name}__corrupted", None)
-
+    delete_user_table(db, table_name)
     return {"deleted": table_name}
 
 

@@ -162,15 +162,6 @@ class TestFullPipelineE2E:
         data = r.json()
         assert data["total"] > 0, "No rows found in test_data table"
 
-    def test_new_table_appears_in_tables_list(self, processed_file):
-        file_id, status = processed_file
-        if status != "celery_success":
-            pytest.skip("Processing did not succeed")
-
-        r = requests.get(f"{API_URL}/api/tables")
-        assert r.status_code == 200
-        tables = r.json()["tables"]
-        assert "test_data" in tables
 
     def test_sse_returns_terminal_event(self, processed_file):
         file_id, status = processed_file

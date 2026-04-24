@@ -59,8 +59,12 @@ class TestTablesIntegration:
         data = r.json()
         assert "columns" in data
         assert isinstance(data["columns"], list)
-        # id should be excluded
-        assert "id" not in data["columns"]
+        assert all(
+            isinstance(c, dict) and "name" in c and "type" in c for c in data["columns"]
+        )
+        names = [c["name"] for c in data["columns"]]
+        assert "id" not in names
+        assert "original_csv_row_id" not in names
 
     def test_table_size(self):
         r = requests.get(f"{API_URL}/api/tables")

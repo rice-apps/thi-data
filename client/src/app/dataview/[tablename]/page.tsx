@@ -3,7 +3,9 @@ import Link from 'next/link';
 import { loginResult } from '@/utils/checklogin';
 import { redirect } from 'next/navigation';
 import { ServiceFactory } from '@/services';
-import type { TableRow } from '@/types';
+import { HttpDataService } from '@/services/HttpDataService';
+import { getSessionUserForApi } from '@/lib/auth-server-session';
+import type { TableRow, TableSchemaColumn } from '@/types';
 import DataTable from './DataTable';
 
 type PageProps = {
@@ -19,10 +21,18 @@ export default async function DataViewPage(props: PageProps) {
     redirect('/login');
   }
 
-  const dataService = ServiceFactory.getDataService();
+  const dataService = new HttpDataService(
+    ServiceFactory.getAuthService(),
+    undefined,
+    async (): Promise<Record<string, string>> => {
+      const user = await getSessionUserForApi();
+      const name = user?.name || user?.email;
+      return name ? { 'X-User-Name': name } : {};
+    },
+  );
 
   let data: TableRow[] = [];
-  let columns: string[] = [];
+  let columns: TableSchemaColumn[] = [];
   let error: string | null = null;
 
   try {
@@ -32,12 +42,21 @@ export default async function DataViewPage(props: PageProps) {
     ]);
 
     data = dataResponse?.data || [];
-    columns = schemaResponse?.columns || [];
+    columns = (schemaResponse?.columns || []).filter(
+      (c) =>
+        !c.name.startsWith('_') &&
+        c.name !== 'id' &&
+        c.name !== 'original_csv_row_id'
+    );
 
     if (columns.length === 0 && data.length > 0) {
-      columns = Object.keys(data[0]).filter((k) => k !== 'id');
+      columns = Object.keys(data[0])
+        .filter(
+          (k) =>
+            !k.startsWith('_') && k !== 'id' && k !== 'original_csv_row_id'
+        )
+        .map((name) => ({ name }));
     }
-    columns = columns.filter((k) => !k.startsWith('_'));
   } catch (err: unknown) {
     if (err instanceof Error) {
       error = err.message;

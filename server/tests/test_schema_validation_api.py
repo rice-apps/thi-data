@@ -137,8 +137,9 @@ class TestProcessFileEndpoint:
         app.include_router(router)
 
         mock_db = MagicMock()
+        mock_db.execute.return_value = MagicMock(rowcount=1)
 
-        def override_get_db():
+        async def override_get_db():
             yield mock_db
 
         app.dependency_overrides[get_db] = override_get_db
@@ -185,7 +186,11 @@ class TestProcessFileEndpoint:
         app.include_router(router)
 
         mock_db = MagicMock()
-        app.dependency_overrides[get_db] = lambda: (yield mock_db) or None
+        mock_db.execute.return_value = MagicMock(rowcount=0)
+        async def override_get_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db] = override_get_db
 
         client = TestClient(app)
 
@@ -221,7 +226,7 @@ class TestValidateSchemaEndpoint:
         mock_storage = MagicMock()
         mock_storage.get_file_path.return_value = Path("/tmp/test.csv")
 
-        def override_get_db():
+        async def override_get_db():
             yield mock_db
 
         app.dependency_overrides[get_db] = override_get_db
@@ -250,7 +255,10 @@ class TestValidateSchemaEndpoint:
             "sample": {}
         }
 
-        with patch("api.validation.infer_from_file", return_value=mock_infer_result):
+        with patch(
+            "services.file_schema_service.infer_from_file",
+            return_value=mock_infer_result,
+        ):
             response = client.post("/api/validate_schema", params={"file_id": "test-123"})
 
         assert response.status_code == 200
@@ -271,7 +279,11 @@ class TestValidateSchemaEndpoint:
         app.include_router(router)
 
         mock_db = MagicMock()
-        app.dependency_overrides[get_db] = lambda: (yield mock_db) or None
+
+        async def override_get_db():
+            yield mock_db
+
+        app.dependency_overrides[get_db] = override_get_db
         app.dependency_overrides[get_storage_provider] = lambda: MagicMock()
 
         client = TestClient(app)
@@ -297,8 +309,10 @@ class TestValidateSchemaEndpoint:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_storage = MagicMock()
@@ -328,8 +342,10 @@ class TestValidateSchemaEndpoint:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_storage = MagicMock()
@@ -343,7 +359,10 @@ class TestValidateSchemaEndpoint:
         mock_repo.update_by_field.return_value = 1
         app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
 
-        with patch("api.validation.infer_from_file", side_effect=Exception("parse error")):
+        with patch(
+            "services.file_schema_service.infer_from_file",
+            side_effect=Exception("parse error"),
+        ):
             client = TestClient(app)
             response = client.post("/api/validate_schema", params={"file_id": "f1"})
 
@@ -433,7 +452,7 @@ class TestSchemaValidationIntegration:
 
         # Save schema via PATCH /api/files/{file_id}
         save_resp = requests.patch(
-            f"{API_URL}/api/files/{file_id}",
+            f"{API_URL}/api/files/{uploaded_file}",
             json={
                 "file_schema": clean_schema,
                 "status": FileStatus.SCHEMA_CONFIRMED,
@@ -443,12 +462,12 @@ class TestSchemaValidationIntegration:
 
         # Queue processing via POST /api/files/{file_id}/process
         process_resp = requests.post(
-            f"{API_URL}/api/files/{file_id}/process",
+            f"{API_URL}/api/files/{uploaded_file}/process",
             json={"proposed_schema": schema_map}
         )
         assert process_resp.status_code == 200, f"Process failed: {process_resp.text}"
         process_data = process_resp.json()
-        assert process_data["file_id"] == file_id
+        assert process_data["file_id"] == uploaded_file
         assert process_data["status"] == "PROCESSING"
 
 
@@ -468,8 +487,10 @@ class TestErrorSanitization:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_storage = MagicMock()
@@ -483,7 +504,10 @@ class TestErrorSanitization:
         mock_repo.update_by_field.return_value = 1
         app.dependency_overrides[get_file_registry_repo] = lambda: mock_repo
 
-        with patch("api.validation.infer_from_file", side_effect=Exception("UnicodeDecodeError at byte 0xFF")):
+        with patch(
+            "services.file_schema_service.infer_from_file",
+            side_effect=Exception("UnicodeDecodeError at byte 0xFF"),
+        ):
             client = TestClient(app)
             resp = client.post("/api/validate_schema", params={"file_id": "f1"})
 
@@ -503,8 +527,10 @@ class TestErrorSanitization:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_storage = MagicMock()
@@ -532,8 +558,10 @@ class TestErrorSanitization:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_model = MagicMock()
@@ -544,8 +572,8 @@ class TestErrorSanitization:
         mock_mapper.column_attrs = [mock_col]
         mock_mapper.primary_key = []
 
-        with patch("api.rows.inspect", return_value=mock_mapper):
-            with patch("api.rows.get_repository") as mock_get_repo:
+        with patch("services.dynamic_row_validation.inspect", return_value=mock_mapper):
+            with patch("services.dynamic_rows_service.get_repository") as mock_get_repo:
                 mock_repo = MagicMock()
                 mock_repo.create.side_effect = Exception("UNIQUE constraint failed: patients.name")
                 mock_get_repo.return_value = mock_repo
@@ -569,13 +597,15 @@ class TestErrorSanitization:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_model = MagicMock()
 
-        with patch("api.rows.get_repository") as mock_get_repo:
+        with patch("services.dynamic_rows_service.get_repository") as mock_get_repo:
             mock_repo = MagicMock()
             mock_repo.filter_text.side_effect = Exception("column 'xyz' does not exist")
             mock_get_repo.return_value = mock_repo
@@ -600,8 +630,10 @@ class TestErrorSanitization:
         app.include_router(router)
 
         mock_db = MagicMock()
-        def override_get_db():
+
+        async def override_get_db():
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db
 
         mock_model = MagicMock()
@@ -612,8 +644,8 @@ class TestErrorSanitization:
         mock_mapper.column_attrs = [mock_col]
         mock_mapper.primary_key = []
 
-        with patch("api.rows.inspect", return_value=mock_mapper):
-            with patch("api.rows.get_repository") as mock_get_repo:
+        with patch("services.dynamic_row_validation.inspect", return_value=mock_mapper):
+            with patch("services.dynamic_rows_service.get_repository") as mock_get_repo:
                 mock_repo = MagicMock()
                 mock_item = MagicMock()
                 mock_repo.get_by_id.return_value = mock_item
